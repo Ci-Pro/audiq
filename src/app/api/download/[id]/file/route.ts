@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createReadStream, existsSync, statSync } from "fs";
 import { join } from "path";
+import { fetchWorker } from "@/lib/worker-manager";
 
 export async function GET(
   _request: NextRequest,
@@ -18,9 +19,7 @@ export async function GET(
     if (!actualPath) {
       // Try fetching from worker service
       try {
-        const workerRes = await fetch(`http://localhost:3003/api/file/${id}`, {
-          signal: AbortSignal.timeout(10000),
-        });
+        const workerRes = await fetchWorker(`/api/file/${id}`);
         if (workerRes.ok) {
           // Stream the response
           const body = workerRes.body;

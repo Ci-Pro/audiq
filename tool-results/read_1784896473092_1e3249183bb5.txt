@@ -1,0 +1,1004 @@
+     1→     1→"use client";
+     2→     2→
+     3→     3→import { useState, useCallback, useRef, useEffect } from "react";
+     4→     4→import { motion, AnimatePresence } from "framer-motion";
+     5→     5→import { toast } from "sonner";
+     6→     6→import {
+     7→     7→  Download,
+     8→     8→  Music,
+     9→     9→  Video,
+    10→    10→  Loader2,
+    11→    11→  CheckCircle2,
+    12→    12→  XCircle,
+    13→    13→  Zap,
+    14→    14→  Shield,
+    15→    15→  Globe,
+    16→    16→  Clock,
+    17→    17→  ChevronDown,
+    18→    18→  History,
+    19→    19→  Trash2,
+    20→    20→  FileAudio,
+    21→    21→  FileVideo,
+    22→    22→  AlertCircle,
+    23→    23→  Sparkles,
+    24→    24→  ArrowRight,
+    25→    25→  Play,
+    26→    26→  Pause,
+    27→    27→} from "lucide-react";
+    28→    28→import { Button } from "@/components/ui/button";
+    29→    29→import { Input } from "@/components/ui/input";
+    30→    30→import { Card, CardContent } from "@/components/ui/card";
+    31→    31→import { Progress } from "@/components/ui/progress";
+    32→    32→import { Badge } from "@/components/ui/badge";
+    33→    33→import { Separator } from "@/components/ui/separator";
+    34→    34→import {
+    35→    35→  Select,
+    36→    36→  SelectContent,
+    37→    37→  SelectItem,
+    38→    38→  SelectTrigger,
+    39→    39→  SelectValue,
+    40→    40→} from "@/components/ui/select";
+    41→    41→import { ScrollArea } from "@/components/ui/scroll-area";
+    42→    42→import { Skeleton } from "@/components/ui/skeleton";
+    43→    43→import { cn } from "@/lib/utils";
+    44→    44→
+    45→    45→// Types
+    46→    46→interface VideoInfo {
+    47→    47→  videoId: string;
+    48→    48→  title: string;
+    49→    49→  thumbnail: string;
+    50→    50→  duration: number;
+    51→    51→  channel: string;
+    52→    52→  durationString: string;
+    53→    53→}
+    54→    54→
+    55→    55→interface DownloadItem {
+    56→    56→  id: string;
+    57→    57→  url: string;
+    58→    58→  title: string;
+    59→    59→  thumbnail: string | null;
+    60→    60→  duration: number | null;
+    61→    61→  format: string;
+    62→    62→  quality: string;
+    63→    63→  status: string;
+    64→    64→  progress: number;
+    65→    65→  fileSize: number | null;
+    66→    66→  createdAt: string;
+    67→    67→  error?: string;
+    68→    68→}
+    69→    69→
+    70→    70→// Utility functions
+    71→    71→function formatDuration(seconds: number): string {
+    72→    72→  if (!seconds || isNaN(seconds)) return "0:00";
+    73→    73→  const h = Math.floor(seconds / 3600);
+    74→    74→  const m = Math.floor((seconds % 3600) / 60);
+    75→    75→  const s = seconds % 60;
+    76→    76→  if (h > 0) return `${h}:${m.toString().padStart(2, "0")}:${s.toString().padStart(2, "0")}`;
+    77→    77→  return `${m}:${s.toString().padStart(2, "0")}`;
+    78→    78→}
+    79→    79→
+    80→    80→function formatFileSize(bytes: number): string {
+    81→    81→  if (!bytes) return "0 B";
+    82→    82→  const sizes = ["B", "KB", "MB", "GB"];
+    83→    83→  const i = Math.floor(Math.log(bytes) / Math.log(1024));
+    84→    84→  return `${(bytes / Math.pow(1024, i)).toFixed(1)} ${sizes[i]}`;
+    85→    85→}
+    86→    86→
+    87→    87→function formatDate(dateStr: string): string {
+    88→    88→  const date = new Date(dateStr);
+    89→    89→  return date.toLocaleDateString("en-US", {
+    90→    90→    month: "short",
+    91→    91→    day: "numeric",
+    92→    92→    hour: "2-digit",
+    93→    93→    minute: "2-digit",
+    94→    94→  });
+    95→    95→}
+    96→    96→
+    97→    97→// ============ Components ============
+    98→    98→
+    99→    99→function AnimatedBackground() {
+   100→   100→  return (
+   101→   101→    <div className="fixed inset-0 -z-10 overflow-hidden">
+   102→   102→      {/* Gradient orbs */}
+   103→   103→      <div className="absolute top-[-20%] left-[-10%] w-[600px] h-[600px] rounded-full bg-emerald-500/10 blur-[120px] animate-float" />
+   104→   104→      <div className="absolute bottom-[-20%] right-[-10%] w-[500px] h-[500px] rounded-full bg-teal-500/8 blur-[100px] animate-float" style={{ animationDelay: "-3s" }} />
+   105→   105→      <div className="absolute top-[40%] right-[20%] w-[300px] h-[300px] rounded-full bg-cyan-500/5 blur-[80px] animate-float" style={{ animationDelay: "-5s" }} />
+   106→   106→      {/* Grid overlay */}
+   107→   107→      <div className="absolute inset-0 bg-grid opacity-40" />
+   108→   108→    </div>
+   109→   109→  );
+   110→   110→}
+   111→   111→
+   112→   112→function FeatureCard({ icon: Icon, title, description }: { icon: React.ElementType; title: string; description: string }) {
+   113→   113→  return (
+   114→   114→    <motion.div
+   115→   115→      whileHover={{ y: -4, scale: 1.02 }}
+   116→   116→      transition={{ type: "spring", stiffness: 300, damping: 20 }}
+   117→   117→    >
+   118→   118→      <Card className="border-border/40 glass-subtle bg-card/50 hover:bg-card/80 transition-colors duration-300">
+   119→   119→        <CardContent className="p-5 flex items-start gap-4">
+   120→   120→          <div className="flex-shrink-0 w-10 h-10 rounded-xl bg-emerald-500/10 flex items-center justify-center">
+   121→   121→            <Icon className="w-5 h-5 text-emerald-500" />
+   122→   122→          </div>
+   123→   123→          <div>
+   124→   124→            <h3 className="font-semibold text-sm text-foreground">{title}</h3>
+   125→   125→            <p className="text-xs text-muted-foreground mt-1 leading-relaxed">{description}</p>
+   126→   126→          </div>
+   127→   127→        </CardContent>
+   128→   128→      </Card>
+   129→   129→    </motion.div>
+   130→   130→  );
+   131→   131→}
+   132→   132→
+   133→   133→function VideoPreviewCard({ video, isLoading }: { video: VideoInfo | null; isLoading: boolean }) {
+   134→   134→  if (isLoading) {
+   135→   135→    return (
+   136→   136→      <motion.div
+   137→   137→        initial={{ opacity: 0, y: 20 }}
+   138→   138→        animate={{ opacity: 1, y: 0 }}
+   139→   139→        exit={{ opacity: 0, y: -20 }}
+   140→   140→      >
+   141→   141→        <Card className="border-border/40 glass-subtle bg-card/50 overflow-hidden">
+   142→   142→          <CardContent className="p-0">
+   143→   143→            <div className="flex flex-col sm:flex-row">
+   144→   144→              <Skeleton className="w-full sm:w-64 h-36 sm:h-auto" />
+   145→   145→              <div className="p-4 flex-1 space-y-3">
+   146→   146→                <Skeleton className="h-5 w-3/4" />
+   147→   147→                <Skeleton className="h-4 w-1/2" />
+   148→   148→                <Skeleton className="h-4 w-1/3" />
+   149→   149→              </div>
+   150→   150→            </div>
+   151→   151→          </CardContent>
+   152→   152→        </Card>
+   153→   153→      </motion.div>
+   154→   154→    );
+   155→   155→  }
+   156→   156→
+   157→   157→  if (!video) return null;
+   158→   158→
+   159→   159→  return (
+   160→   160→    <motion.div
+   161→   161→      initial={{ opacity: 0, y: 20 }}
+   162→   162→      animate={{ opacity: 1, y: 0 }}
+   163→   163→      exit={{ opacity: 0, y: -20 }}
+   164→   164→    >
+   165→   165→      <Card className="border-border/40 glass-subtle bg-card/50 overflow-hidden">
+   166→   166→        <CardContent className="p-0">
+   167→   167→          <div className="flex flex-col sm:flex-row">
+   168→   168→            <div className="relative w-full sm:w-64 h-36 sm:h-auto flex-shrink-0 bg-black/20">
+   169→   169→              <img
+   170→   170→                src={video.thumbnail}
+   171→   171→                alt={video.title}
+   172→   172→                className="w-full h-full object-cover"
+   173→   173→              />
+   174→   174→              <div className="absolute bottom-2 right-2 bg-black/80 px-2 py-0.5 rounded text-xs font-medium text-white">
+   175→   175→                {video.durationString || formatDuration(video.duration)}
+   176→   176→              </div>
+   177→   177→            </div>
+   178→   178→            <div className="p-4 flex-1 min-w-0">
+   179→   179→              <h3 className="font-semibold text-foreground text-sm line-clamp-2 leading-snug">{video.title}</h3>
+   180→   180→              <p className="text-muted-foreground text-xs mt-1.5">{video.channel}</p>
+   181→   181→              <div className="flex items-center gap-2 mt-2">
+   182→   182→                <Badge variant="secondary" className="text-[10px] px-2 py-0">
+   183→   183→                  {video.durationString || formatDuration(video.duration)}
+   184→   184→                </Badge>
+   185→   185→              </div>
+   186→   186→            </div>
+   187→   187→          </div>
+   188→   188→        </CardContent>
+   189→   189→      </Card>
+   190→   190→    </motion.div>
+   191→   191→  );
+   192→   192→}
+   193→   193→
+   194→   194→function FormatSelector({
+   195→   195→  format,
+   196→   196→  setFormat,
+   197→   197→  quality,
+   198→   198→  setQuality,
+   199→   199→  mp4Qualities,
+   200→   200→  mp3Qualities,
+   201→   201→}: {
+   202→   202→  format: string;
+   203→   203→  setFormat: (f: string) => void;
+   204→   204→  quality: string;
+   205→   205→  setQuality: (q: string) => void;
+   206→   206→  mp4Qualities: string[];
+   207→   207→  mp3Qualities: string[];
+   208→   208→}) {
+   209→   209→  return (
+   210→   210→    <AnimatePresence mode="wait">
+   211→   211→      <motion.div
+   212→   212→        key={format}
+   213→   213→        initial={{ opacity: 0, x: -10 }}
+   214→   214→        animate={{ opacity: 1, x: 0 }}
+   215→   215→        exit={{ opacity: 0, x: 10 }}
+   216→   216→        className="flex flex-col sm:flex-row gap-3"
+   217→   217→      >
+   218→   218→        {/* Format Toggle */}
+   219→   219→        <div className="flex gap-2">
+   220→   220→          <Button
+   221→   221→            variant={format === "mp4" ? "default" : "outline"}
+   222→   222→            size="sm"
+   223→   223→            className={cn(
+   224→   224→              "gap-2 transition-all duration-300",
+   225→   225→              format === "mp4"
+   226→   226→                ? "bg-emerald-600 hover:bg-emerald-700 text-white shadow-lg shadow-emerald-500/20"
+   227→   227→                : "border-border/60 hover:bg-accent/50"
+   228→   228→            )}
+   229→   229→            onClick={() => {
+   230→   230→              setFormat("mp4");
+   231→   231→              setQuality(mp4Qualities[1] || "720");
+   232→   232→            }}
+   233→   233→          >
+   234→   234→            <Video className="w-4 h-4" />
+   235→   235→            MP4
+   236→   236→          </Button>
+   237→   237→          <Button
+   238→   238→            variant={format === "mp3" ? "default" : "outline"}
+   239→   239→            size="sm"
+   240→   240→            className={cn(
+   241→   241→              "gap-2 transition-all duration-300",
+   242→   242→              format === "mp3"
+   243→   243→                ? "bg-emerald-600 hover:bg-emerald-700 text-white shadow-lg shadow-emerald-500/20"
+   244→   244→                : "border-border/60 hover:bg-accent/50"
+   245→   245→            )}
+   246→   246→            onClick={() => {
+   247→   247→              setFormat("mp3");
+   248→   248→              setQuality(mp3Qualities[1] || "192");
+   249→   249→            }}
+   250→   250→          >
+   251→   251→            <Music className="w-4 h-4" />
+   252→   252→            MP3
+   253→   253→          </Button>
+   254→   254→        </div>
+   255→   255→
+   256→   256→        {/* Quality Selector */}
+   257→   257→        <Select value={quality} onValueChange={setQuality}>
+   258→   258→          <SelectTrigger className="w-full sm:w-[180px] bg-card/50 border-border/40">
+   259→   259→            <SelectValue placeholder="Select quality" />
+   260→   260→          </SelectTrigger>
+   261→   261→          <SelectContent className="bg-card border-border/40">
+   262→   262→            {(format === "mp4" ? mp4Qualities : mp3Qualities).map((q) => (
+   263→   263→              <SelectItem key={q} value={q} className="text-foreground">
+   264→   264→                {format === "mp4" ? `${q}p` : `${q} kbps`}
+   265→   265→              </SelectItem>
+   266→   266→            ))}
+   267→   267→          </SelectContent>
+   268→   268→        </Select>
+   269→   269→      </motion.div>
+   270→   270→    </AnimatePresence>
+   271→   271→  );
+   272→   272→}
+   273→   273→
+   274→   274→function DownloadProgressItem({
+   275→   275→  item,
+   276→   276→  onCancel,
+   277→   277→}: {
+   278→   278→  item: DownloadItem;
+   279→   279→  onCancel: (id: string) => void;
+   280→   280→}) {
+   281→   281→  return (
+   282→   282→    <motion.div
+   283→   283→      layout
+   284→   284→      initial={{ opacity: 0, scale: 0.95 }}
+   285→   285→      animate={{ opacity: 1, scale: 1 }}
+   286→   286→      exit={{ opacity: 0, scale: 0.95 }}
+   287→   287→    >
+   288→   288→      <Card className="border-border/40 glass-subtle bg-card/50 overflow-hidden">
+   289→   289→        <CardContent className="p-3">
+   290→   290→          <div className="flex items-center gap-3">
+   291→   291→            {/* Thumbnail */}
+   292→   292→            <div className="w-16 h-10 rounded-md overflow-hidden flex-shrink-0 bg-black/20">
+   293→   293→              {item.thumbnail ? (
+   294→   294→                <img src={item.thumbnail} alt="" className="w-full h-full object-cover" />
+   295→   295→              ) : (
+   296→   296→                <div className="w-full h-full flex items-center justify-center">
+   297→   297→                  {item.format === "mp3" ? (
+   298→   298→                    <FileAudio className="w-4 h-4 text-emerald-500" />
+   299→   299→                  ) : (
+   300→   300→                    <FileVideo className="w-4 h-4 text-emerald-500" />
+   301→   301→                  )}
+   302→   302→                </div>
+   303→   303→              )}
+   304→   304→            </div>
+   305→   305→
+   306→   306→            {/* Info */}
+   307→   307→            <div className="flex-1 min-w-0">
+   308→   308→              <p className="text-xs font-medium text-foreground truncate">{item.title}</p>
+   309→   309→              <div className="flex items-center gap-2 mt-1">
+   310→   310→                <Badge variant="outline" className="text-[10px] px-1.5 py-0 border-border/40">
+   311→   311→                  {item.format.toUpperCase()}
+   312→   312→                </Badge>
+   313→   313→                <span className="text-[10px] text-muted-foreground">
+   314→   314→                  {item.format === "mp4" ? `${item.quality}p` : `${item.quality}kbps`}
+   315→   315→                </span>
+   316→   316→              </div>
+   317→   317→            </div>
+   318→   318→
+   319→   319→            {/* Status */}
+   320→   320→            <div className="flex items-center gap-2 flex-shrink-0">
+   321→   321→              {item.status === "completed" && (
+   322→   322→                <a href={`/api/download/${item.id}/file`} download>
+   323→   323→                  <Button size="sm" className="gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white h-8 text-xs">
+   324→   324→                    <Download className="w-3.5 h-3.5" />
+   325→   325→                    Save
+   326→   326→                  </Button>
+   327→   327→                </a>
+   328→   328→              )}
+   329→   329→              {item.status === "processing" && (
+   330→   330→                <Button
+   331→   331→                  size="sm"
+   332→   332→                  variant="ghost"
+   333→   333→                  className="h-8 text-xs text-destructive hover:text-destructive"
+   334→   334→                  onClick={() => onCancel(item.id)}
+   335→   335→                >
+   336→   336→                  Cancel
+   337→   337→                </Button>
+   338→   338→              )}
+   339→   339→              {(item.status === "completed" || item.status === "failed") && item.fileSize && (
+   340→   340→                <span className="text-[10px] text-muted-foreground">
+   341→   341→                  {formatFileSize(item.fileSize)}
+   342→   342→                </span>
+   343→   343→              )}
+   344→   344→            </div>
+   345→   345→          </div>
+   346→   346→
+   347→   347→          {/* Progress Bar */}
+   348→   348→          {(item.status === "processing" || item.status === "completed") && (
+   349→   349→            <div className="mt-2.5">
+   350→   350→              <Progress
+   351→   351→                value={item.status === "completed" ? 100 : item.progress}
+   352→   352→                className="h-1.5 bg-muted/50"
+   353→   353→              />
+   354→   354→              <div className="flex items-center justify-between mt-1.5">
+   355→   355→                {item.status === "processing" && (
+   356→   356→                  <>
+   357→   357→                    <div className="flex items-center gap-1.5">
+   358→   358→                      <Loader2 className="w-3 h-3 text-emerald-500 animate-spin" />
+   359→   359→                      <span className="text-[10px] text-muted-foreground">
+   360→   360→                        Processing...
+   361→   361→                      </span>
+   362→   362→                    </div>
+   363→   363→                    <span className="text-[10px] text-emerald-500 font-medium">
+   364→   364→                      {item.progress.toFixed(1)}%
+   365→   365→                    </span>
+   366→   366→                  </>
+   367→   367→                )}
+   368→   368→                {item.status === "completed" && (
+   369→   369→                  <div className="flex items-center gap-1.5">
+   370→   370→                    <CheckCircle2 className="w-3 h-3 text-emerald-500" />
+   371→   371→                    <span className="text-[10px] text-emerald-500 font-medium">Ready to download</span>
+   372→   372→                  </div>
+   373→   373→                )}
+   374→   374→              </div>
+   375→   375→            </div>
+   376→   376→          )}
+   377→   377→
+   378→   378→          {/* Error */}
+   379→   379→          {item.status === "failed" && item.error && (
+   380→   380→            <div className="mt-2 flex items-center gap-1.5">
+   381→   381→              <AlertCircle className="w-3 h-3 text-destructive" />
+   382→   382→              <span className="text-[10px] text-destructive">{item.error}</span>
+   383→   383→            </div>
+   384→   384→          )}
+   385→   385→        </CardContent>
+   386→   386→      </Card>
+   387→   387→    </motion.div>
+   388→   388→  );
+   389→   389→}
+   390→   390→
+   391→   391→function HistoryItem({ item }: { item: DownloadItem }) {
+   392→   392→  return (
+   393→   393→    <Card className="border-border/30 bg-card/30 overflow-hidden hover:bg-card/50 transition-colors">
+   394→   394→      <CardContent className="p-3">
+   395→   395→        <div className="flex items-center gap-3">
+   396→   396→          <div className="w-12 h-8 rounded overflow-hidden flex-shrink-0 bg-black/10">
+   397→   397→            {item.thumbnail ? (
+   398→   398→              <img src={item.thumbnail} alt="" className="w-full h-full object-cover" />
+   399→   399→            ) : (
+   400→   400→              <div className="w-full h-full flex items-center justify-center">
+   401→   401→                {item.format === "mp3" ? (
+   402→   402→                  <FileAudio className="w-3 h-3 text-muted-foreground" />
+   403→   403→                ) : (
+   404→   404→                  <FileVideo className="w-3 h-3 text-muted-foreground" />
+   405→   405→                )}
+   406→   406→              </div>
+   407→   407→            )}
+   408→   408→          </div>
+   409→   409→          <div className="flex-1 min-w-0">
+   410→   410→            <p className="text-[11px] font-medium text-foreground truncate">{item.title}</p>
+   411→   411→            <div className="flex items-center gap-1.5 mt-0.5">
+   412→   412→              <Badge variant="outline" className="text-[9px] px-1 py-0 border-border/30">
+   413→   413→                {item.format.toUpperCase()}
+   414→   414→              </Badge>
+   415→   415→              <span className="text-[9px] text-muted-foreground">
+   416→   416→                {formatDate(item.createdAt)}
+   417→   417→              </span>
+   418→   418→              {item.fileSize && (
+   419→   419→                <span className="text-[9px] text-muted-foreground">
+   420→   420→                  · {formatFileSize(item.fileSize)}
+   421→   421→                </span>
+   422→   422→              )}
+   423→   423→            </div>
+   424→   424→          </div>
+   425→   425→          {item.status === "completed" && (
+   426→   426→            <a href={`/api/download/${item.id}/file`} download>
+   427→   427→              <Button size="sm" variant="ghost" className="h-7 w-7 p-0 text-emerald-500 hover:text-emerald-600">
+   428→   428→                <Download className="w-3.5 h-3.5" />
+   429→   429→              </Button>
+   430→   430→            </a>
+   431→   431→          )}
+   432→   432→        </div>
+   433→   433→      </CardContent>
+   434→   434→    </Card>
+   435→   435→  );
+   436→   436→}
+   437→   437→
+   438→   438→// ============ Main Page ============
+   439→   439→
+   440→   440→export default function Home() {
+   441→   441→  const [url, setUrl] = useState("");
+   442→   442→  const [videoInfo, setVideoInfo] = useState<VideoInfo | null>(null);
+   443→   443→  const [isLoadingVideo, setIsLoadingVideo] = useState(false);
+   444→   444→  const [format, setFormat] = useState("mp4");
+   445→   445→  const [quality, setQuality] = useState("720");
+   446→   446→  const [activeDownloads, setActiveDownloads] = useState<DownloadItem[]>([]);
+   447→   447→  const [history, setHistory] = useState<DownloadItem[]>([]);
+   448→   448→  const [showHistory, setShowHistory] = useState(false);
+   449→   449→  const [isConverting, setIsConverting] = useState(false);
+   450→   450→  const [hasStarted, setHasStarted] = useState(false);
+   451→   451→  const pollingRef = useRef<Map<string, NodeJS.Timeout>>(new Map());
+   452→   452→  const inputRef = useRef<HTMLInputElement>(null);
+   453→   453→
+   454→   454→  const mp4Qualities = ["360", "480", "720", "1080"];
+   455→   455→  const mp3Qualities = ["128", "192", "320"];
+   456→   456→
+   457→   457→  // Poll for download status updates
+   458→   458→  const startPolling = useCallback((id: string) => {
+   459→   459→    const interval = setInterval(async () => {
+   460→   460→      try {
+   461→   461→        const res = await fetch(`/api/download/${id}`);
+   462→   462→        if (!res.ok) return;
+   463→   463→        const data = await res.json();
+   464→   464→
+   465→   465→        setActiveDownloads((prev) =>
+   466→   466→          prev.map((d) =>
+   467→   467→            d.id === id
+   468→   468→              ? {
+   469→   469→                  ...d,
+   470→   470→                  status: data.status,
+   471→   471→                  progress: data.progress,
+   472→   472→                  fileSize: data.fileSize || d.fileSize,
+   473→   473→                  error: data.error,
+   474→   474→                }
+   475→   475→              : d
+   476→   476→          )
+   477→   477→        );
+   478→   478→
+   479→   479→        // Stop polling when done
+   480→   480→        if (data.status === "completed") {
+   481→   481→          clearInterval(interval);
+   482→   482→          pollingRef.current.delete(id);
+   483→   483→          toast.success("Download ready!", {
+   484→   484→            description: "Your file is ready to download.",
+   485→   485→          });
+   486→   486→          fetchHistory();
+   487→   487→        } else if (data.status === "failed") {
+   488→   488→          clearInterval(interval);
+   489→   489→          pollingRef.current.delete(id);
+   490→   490→          if (data.error && data.error !== "Cancelled") {
+   491→   491→            toast.error("Download failed", {
+   492→   492→              description: data.error,
+   493→   493→            });
+   494→   494→          }
+   495→   495→        }
+   496→   496→      } catch {
+   497→   497→        // silent fail
+   498→   498→      }
+   499→   499→    }, 2000);
+   500→   500→    pollingRef.current.set(id, interval);
+   501→   501→  }, []);
+   502→   502→
+   503→   503→  // Cleanup polling on unmount
+   504→   504→  useEffect(() => {
+   505→   505→    return () => {
+   506→   506→      pollingRef.current.forEach((interval) => clearInterval(interval));
+   507→   507→    };
+   508→   508→  }, []);
+   509→   509→
+   510→   510→  // Fetch history on mount
+   511→   511→  useEffect(() => {
+   512→   512→    fetchHistory();
+   513→   513→  }, []);
+   514→   514→
+   515→   515→  const fetchHistory = async () => {
+   516→   516→    try {
+   517→   517→      const res = await fetch("/api/history");
+   518→   518→      if (res.ok) {
+   519→   519→        const data = await res.json();
+   520→   520→        setHistory(data);
+   521→   521→      }
+   522→   522→    } catch {
+   523→   523→      // silent fail
+   524→   524→    }
+   525→   525→  };
+   526→   526→
+   527→   527→  const extractVideoId = (inputUrl: string): string | null => {
+   528→   528→    const match = inputUrl.match(
+   529→   529→      /(?:youtube\.com\/(?:watch\?v=|shorts\/|embed\/|v\/|live\/)|youtu\.be\/)([a-zA-Z0-9_-]{11})/
+   530→   530→    );
+   531→   531→    return match ? match[1] : null;
+   532→   532→  };
+   533→   533→
+   534→   534→  const handleFetchVideoInfo = useCallback(async () => {
+   535→   535→    const videoId = extractVideoId(url);
+   536→   536→    if (!videoId) {
+   537→   537→      toast.error("Invalid URL", {
+   538→   538→        description: "Please enter a valid YouTube URL.",
+   539→   539→      });
+   540→   540→      return;
+   541→   541→    }
+   542→   542→
+   543→   543→    setIsLoadingVideo(true);
+   544→   544→    setVideoInfo(null);
+   545→   545→    setHasStarted(true);
+   546→   546→
+   547→   547→    try {
+   548→   548→      const res = await fetch("/api/video-info", {
+   549→   549→        method: "POST",
+   550→   550→        headers: { "Content-Type": "application/json" },
+   551→   551→        body: JSON.stringify({ url }),
+   552→   552→      });
+   553→   553→
+   554→   554→      if (!res.ok) {
+   555→   555→        const errorData = await res.json();
+   556→   556→        const code = errorData.code;
+   557→   557→        if (code === "BOT_BLOCKED") {
+   558→   558→          toast.error("YouTube is blocking requests", {
+   559→   559→            description: "This video might be restricted. Try a different video or wait a moment and retry.",
+   560→   560→            duration: 8000,
+   561→   561→            action: {
+   562→   562→              label: "Retry",
+   563→   563→              onClick: () => handleFetchVideoInfo(),
+   564→   564→            },
+   565→   565→          });
+   566→   566→          return;
+   567→   567→        }
+   568→   568→        throw new Error(errorData.error || "Failed to fetch video info");
+   569→   569→      }
+   570→   570→
+   571→   571→      const data = await res.json();
+   572→   572→      setVideoInfo(data);
+   573→   573→    } catch (error: any) {
+   574→   574→      toast.error("Failed to analyze video", {
+   575→   575→        description: error.message || "Something went wrong. Please try again.",
+   576→   576→        duration: 6000,
+   577→   577→      });
+   578→   578→    } finally {
+   579→   579→      setIsLoadingVideo(false);
+   580→   580→    }
+   581→   581→  }, [url]);
+   582→   582→
+   583→   583→  const handleStartDownload = useCallback(async () => {
+   584→   584→    if (!videoInfo) return;
+   585→   585→
+   586→   586→    setIsConverting(true);
+   587→   587→
+   588→   588→    try {
+   589→   589→      // Create download task in database
+   590→   590→      const res = await fetch("/api/download", {
+   591→   591→        method: "POST",
+   592→   592→        headers: { "Content-Type": "application/json" },
+   593→   593→        body: JSON.stringify({
+   594→   594→          url,
+   595→   595→          format,
+   596→   596→          quality,
+   597→   597→          title: videoInfo.title,
+   598→   598→          thumbnail: videoInfo.thumbnail,
+   599→   599→          duration: videoInfo.duration,
+   600→   600→          channel: videoInfo.channel,
+   601→   601→        }),
+   602→   602→      });
+   603→   603→
+   604→   604→      if (!res.ok) {
+   605→   605→        throw new Error("Failed to create download task");
+   606→   606→      }
+   607→   607→
+   608→   608→      const taskData = await res.json();
+   609→   609→
+   610→   610→      // Add to active downloads
+   611→   611→      const newDownload: DownloadItem = {
+   612→   612→        id: taskData.id,
+   613→   613→        url,
+   614→   614→        title: videoInfo.title,
+   615→   615→        thumbnail: videoInfo.thumbnail,
+   616→   616→        duration: videoInfo.duration,
+   617→   617→        format,
+   618→   618→        quality,
+   619→   619→        status: "processing",
+   620→   620→        progress: 0,
+   621→   621→        fileSize: null,
+   622→   622→        createdAt: new Date().toISOString(),
+   623→   623→      };
+   624→   624→
+   625→   625→      setActiveDownloads((prev) => [newDownload, ...prev]);
+   626→   626→
+   627→   627→      // Start download via worker proxy API
+   628→   628→      fetch("/api/worker/download", {
+   629→   629→        method: "POST",
+   630→   630→        headers: { "Content-Type": "application/json" },
+   631→   631→        body: JSON.stringify({
+   632→   632→          id: taskData.id,
+   633→   633→          url,
+   634→   634→          format,
+   635→   635→          quality,
+   636→   636→        }),
+   637→   637→      }).catch(() => {
+   638→   638→        toast.error("Error", { description: "Failed to start download worker." });
+   639→   639→      });
+   640→   640→
+   641→   641→      // Start polling for progress
+   642→   642→      startPolling(taskData.id);
+   643→   643→
+   644→   644→      toast.info("Download started", {
+   645→   645→        description: `Converting to ${format.toUpperCase()} ${format === "mp4" ? `${quality}p` : `${quality}kbps`}...`,
+   646→   646→      });
+   647→   647→
+   648→   648→      // Reset form
+   649→   649→      setUrl("");
+   650→   650→      setVideoInfo(null);
+   651→   651→      inputRef.current?.focus();
+   652→   652→    } catch (error: any) {
+   653→   653→      toast.error("Error", {
+   654→   654→        description: error.message || "Failed to start download.",
+   655→   655→      });
+   656→   656→    } finally {
+   657→   657→      setIsConverting(false);
+   658→   658→    }
+   659→   659→  }, [videoInfo, url, format, quality]);
+   660→   660→
+   661→   661→  const handleCancelDownload = useCallback((id: string) => {
+   662→   662→    fetch(`/api/worker/cancel/${id}`, { method: "POST" }).catch(() => {});
+   663→   663→    setActiveDownloads((prev) =>
+   664→   664→      prev.map((d) => (d.id === id ? { ...d, status: "failed", error: "Cancelled" } : d))
+   665→   665→    );
+   666→   666→  }, []);
+   667→   667→
+   668→   668→  const handlePaste = useCallback(async () => {
+   669→   669→    try {
+   670→   670→      const text = await navigator.clipboard.readText();
+   671→   671→      setUrl(text);
+   672→   672→      if (extractVideoId(text)) {
+   673→   673→        // Auto-fetch if valid URL
+   674→   674→        setTimeout(() => handleFetchVideoInfo(), 100);
+   675→   675→      }
+   676→   676→    } catch {
+   677→   677→      // Clipboard access denied
+   678→   678→    }
+   679→   679→  }, [handleFetchVideoInfo]);
+   680→   680→
+   681→   681→  const handleKeyDown = useCallback(
+   682→   682→    (e: React.KeyboardEvent<HTMLInputElement>) => {
+   683→   683→      if (e.key === "Enter" && !videoInfo && url) {
+   684→   684→        handleFetchVideoInfo();
+   685→   685→      }
+   686→   686→    },
+   687→   687→    [handleFetchVideoInfo, url, videoInfo]
+   688→   688→  );
+   689→   689→
+   690→   690→  const completedCount = history.filter((h) => h.status === "completed").length;
+   691→   691→
+   692→   692→  return (
+   693→   693→    <div className="min-h-screen flex flex-col relative">
+   694→   694→      <AnimatedBackground />
+   695→   695→
+   696→   696→      {/* Header */}
+   697→   697→      <header className="relative z-10 py-4 px-6">
+   698→   698→        <div className="max-w-5xl mx-auto flex items-center justify-between">
+   699→   699→          <div className="flex items-center gap-2.5">
+   700→   700→            <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-emerald-500 to-teal-600 flex items-center justify-center shadow-lg shadow-emerald-500/20">
+   701→   701→              <Zap className="w-5 h-5 text-white" />
+   702→   702→            </div>
+   703→   703→            <span className="text-lg font-bold text-foreground tracking-tight">VortexTube</span>
+   704→   704→          </div>
+   705→   705→
+   706→   706→          <div className="flex items-center gap-3">
+   707→   707→            {history.length > 0 && (
+   708→   708→              <Button
+   709→   709→                variant="ghost"
+   710→   710→                size="sm"
+   711→   711→                className="gap-2 text-muted-foreground hover:text-foreground"
+   712→   712→                onClick={() => setShowHistory(!showHistory)}
+   713→   713→              >
+   714→   714→                <History className="w-4 h-4" />
+   715→   715→                <span className="hidden sm:inline">History</span>
+   716→   716→                {completedCount > 0 && (
+   717→   717→                  <Badge variant="secondary" className="ml-1 text-[10px] h-4 px-1.5">
+   718→   718→                    {completedCount}
+   719→   719→                  </Badge>
+   720→   720→                )}
+   721→   721→                <ChevronDown className={cn("w-3 h-3 transition-transform", showHistory && "rotate-180")} />
+   722→   722→              </Button>
+   723→   723→            )}
+   724→   724→          </div>
+   725→   725→        </div>
+   726→   726→      </header>
+   727→   727→
+   728→   728→      {/* Main Content */}
+   729→   729→      <main className="relative z-10 flex-1 px-6 pb-20">
+   730→   730→        <div className="max-w-5xl mx-auto">
+   731→   731→          {/* Hero Section */}
+   732→   732→          <motion.div
+   733→   733→            initial={{ opacity: 0, y: 30 }}
+   734→   734→            animate={{ opacity: 1, y: 0 }}
+   735→   735→            transition={{ duration: 0.6, ease: "easeOut" }}
+   736→   736→            className="text-center mt-8 sm:mt-14 mb-10"
+   737→   737→          >
+   738→   738→            <motion.div
+   739→   739→              initial={{ scale: 0.9 }}
+   740→   740→              animate={{ scale: 1 }}
+   741→   741→              transition={{ duration: 0.5, delay: 0.1 }}
+   742→   742→              className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-emerald-500/10 border border-emerald-500/20 mb-6"
+   743→   743→            >
+   744→   744→              <Sparkles className="w-3.5 h-3.5 text-emerald-500" />
+   745→   745→              <span className="text-xs font-medium text-emerald-500">Free & Unlimited Downloads</span>
+   746→   746→            </motion.div>
+   747→   747→
+   748→   748→            <h1 className="text-4xl sm:text-5xl md:text-6xl font-bold tracking-tight text-foreground leading-[1.1]">
+   749→   749→              YouTube to{" "}
+   750→   750→              <span className="bg-gradient-to-r from-emerald-400 via-teal-400 to-cyan-400 bg-clip-text text-transparent">
+   751→   751→                MP3 & MP4
+   752→   752→              </span>
+   753→   753→            </h1>
+   754→   754→            <p className="mt-4 text-base sm:text-lg text-muted-foreground max-w-xl mx-auto leading-relaxed">
+   755→   755→              Convert and download any YouTube video in seconds. High quality, fast processing, no registration needed.
+   756→   756→            </p>
+   757→   757→          </motion.div>
+   758→   758→
+   759→   759→          {/* URL Input Card */}
+   760→   760→          <motion.div
+   761→   761→            initial={{ opacity: 0, y: 20 }}
+   762→   762→            animate={{ opacity: 1, y: 0 }}
+   763→   763→            transition={{ duration: 0.5, delay: 0.2 }}
+   764→   764→          >
+   765→   765→            <Card className="border-border/40 glass-subtle bg-card/60 glow-primary overflow-hidden">
+   766→   766→              <CardContent className="p-4 sm:p-6">
+   767→   767→                {/* URL Input */}
+   768→   768→                <div className="flex gap-2">
+   769→   769→                  <div className="flex-1 relative">
+   770→   770→                    <Input
+   771→   771→                      ref={inputRef}
+   772→   772→                      type="url"
+   773→   773→                      placeholder="Paste YouTube URL here..."
+   774→   774→                      value={url}
+   775→   775→                      onChange={(e) => setUrl(e.target.value)}
+   776→   776→                      onKeyDown={handleKeyDown}
+   777→   777→                      className="h-12 sm:h-14 bg-background/50 border-border/40 pl-12 text-sm sm:text-base placeholder:text-muted-foreground/50 focus:border-emerald-500/50 focus:ring-emerald-500/20 transition-all"
+   778→   778→                    />
+   779→   779→                    <div className="absolute left-4 top-1/2 -translate-y-1/2">
+   780→   780→                      <Globe className="w-4.5 h-4.5 text-muted-foreground" />
+   781→   781→                    </div>
+   782→   782→                  </div>
+   783→   783→                  <div className="flex gap-2">
+   784→   784→                    <Button
+   785→   785→                      variant="outline"
+   786→   786→                      size="sm"
+   787→   787→                      className="h-12 sm:h-14 px-3 border-border/40 hover:bg-accent/50"
+   788→   788→                      onClick={handlePaste}
+   789→   789→                    >
+   790→   790→                      Paste
+   791→   791→                    </Button>
+   792→   792→                    <Button
+   793→   793→                      size="sm"
+   794→   794→                      className="h-12 sm:h-14 px-5 sm:px-8 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white font-medium shadow-lg shadow-emerald-500/20 transition-all"
+   795→   795→                      onClick={handleFetchVideoInfo}
+   796→   796→                      disabled={!url || isLoadingVideo}
+   797→   797→                    >
+   798→   798→                      {isLoadingVideo ? (
+   799→   799→                        <Loader2 className="w-4 h-4 animate-spin" />
+   800→   800→                      ) : hasStarted ? (
+   801→   801→                        "Fetch"
+   802→   802→                      ) : (
+   803→   803→                        <span className="flex items-center gap-2">
+   804→   804→                          Analyze
+   805→   805→                          <ArrowRight className="w-4 h-4" />
+   806→   806→                        </span>
+   807→   807→                      )}
+   808→   808→                    </Button>
+   809→   809→                  </div>
+   810→   810→                </div>
+   811→   811→
+   812→   812→                {/* Video Preview */}
+   813→   813→                <AnimatePresence>
+   814→   814→                  {(videoInfo || isLoadingVideo) && (
+   815→   815→                    <motion.div
+   816→   816→                      initial={{ opacity: 0, height: 0 }}
+   817→   817→                      animate={{ opacity: 1, height: "auto" }}
+   818→   818→                      exit={{ opacity: 0, height: 0 }}
+   819→   819→                      className="overflow-hidden"
+   820→   820→                    >
+   821→   821→                      <div className="mt-4">
+   822→   822→                        <VideoPreviewCard video={videoInfo} isLoading={isLoadingVideo} />
+   823→   823→                      </div>
+   824→   824→
+   825→   825→                      {/* Format Selection + Download Button */}
+   826→   826→                      {!isLoadingVideo && videoInfo && (
+   827→   827→                        <motion.div
+   828→   828→                          initial={{ opacity: 0, y: 10 }}
+   829→   829→                          animate={{ opacity: 1, y: 0 }}
+   830→   830→                          className="mt-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4"
+   831→   831→                        >
+   832→   832→                          <FormatSelector
+   833→   833→                            format={format}
+   834→   834→                            setFormat={setFormat}
+   835→   835→                            quality={quality}
+   836→   836→                            setQuality={setQuality}
+   837→   837→                            mp4Qualities={mp4Qualities}
+   838→   838→                            mp3Qualities={mp3Qualities}
+   839→   839→                          />
+   840→   840→
+   841→   841→                          <Button
+   842→   842→                            size="lg"
+   843→   843→                            className="gap-2.5 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white font-semibold shadow-xl shadow-emerald-500/25 transition-all hover:shadow-emerald-500/40 hover:scale-[1.02] active:scale-[0.98]"
+   844→   844→                            onClick={handleStartDownload}
+   845→   845→                            disabled={isConverting}
+   846→   846→                          >
+   847→   847→                            {isConverting ? (
+   848→   848→                              <>
+   849→   849→                                <Loader2 className="w-5 h-5 animate-spin" />
+   850→   850→                                Starting...
+   851→   851→                              </>
+   852→   852→                            ) : (
+   853→   853→                              <>
+   854→   854→                                <Download className="w-5 h-5" />
+   855→   855→                                Convert & Download
+   856→   856→                              </>
+   857→   857→                            )}
+   858→   858→                          </Button>
+   859→   859→                        </motion.div>
+   860→   860→                      )}
+   861→   861→                    </motion.div>
+   862→   862→                  )}
+   863→   863→                </AnimatePresence>
+   864→   864→              </CardContent>
+   865→   865→            </Card>
+   866→   866→          </motion.div>
+   867→   867→
+   868→   868→          {/* Active Downloads */}
+   869→   869→          <AnimatePresence>
+   870→   870→            {activeDownloads.length > 0 && (
+   871→   871→              <motion.div
+   872→   872→                initial={{ opacity: 0, y: 20 }}
+   873→   873→                animate={{ opacity: 1, y: 0 }}
+   874→   874→                className="mt-6"
+   875→   875→              >
+   876→   876→                <h2 className="text-sm font-semibold text-foreground mb-3 flex items-center gap-2">
+   877→   877→                  <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+   878→   878→                  Active Downloads
+   879→   879→                </h2>
+   880→   880→                <div className="space-y-2">
+   881→   881→                  <AnimatePresence mode="popLayout">
+   882→   882→                    {activeDownloads
+   883→   883→                      .filter((d) => d.status !== "completed")
+   884→   884→                      .map((item) => (
+   885→   885→                        <DownloadProgressItem key={item.id} item={item} onCancel={handleCancelDownload} />
+   886→   886→                      ))}
+   887→   887→                  </AnimatePresence>
+   888→   888→                </div>
+   889→   889→
+   890→   890→                {/* Completed Items */}
+   891→   891→                {activeDownloads.some((d) => d.status === "completed") && (
+   892→   892→                  <div className="mt-3">
+   893→   893→                    <div className="space-y-2">
+   894→   894→                      <AnimatePresence mode="popLayout">
+   895→   895→                        {activeDownloads
+   896→   896→                          .filter((d) => d.status === "completed")
+   897→   897→                          .map((item) => (
+   898→   898→                            <DownloadProgressItem key={item.id} item={item} onCancel={handleCancelDownload} />
+   899→   899→                          ))}
+   900→   900→                      </AnimatePresence>
+   901→   901→                    </div>
+   902→   902→                  </div>
+   903→   903→                )}
+   904→   904→              </motion.div>
+   905→   905→            )}
+   906→   906→          </AnimatePresence>
+   907→   907→
+   908→   908→          {/* Features Section */}
+   909→   909→          {!hasStarted && (
+   910→   910→            <motion.div
+   911→   911→              initial={{ opacity: 0, y: 30 }}
+   912→   912→              animate={{ opacity: 1, y: 0 }}
+   913→   913→              transition={{ duration: 0.6, delay: 0.5 }}
+   914→   914→              className="mt-14"
+   915→   915→            >
+   916→   916→              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+   917→   917→                <FeatureCard
+   918→   918→                  icon={Zap}
+   919→   919→                  title="Lightning Fast"
+   920→   920→                  description="Convert videos in seconds with our optimized processing engine. No waiting, instant results."
+   921→   921→                />
+   922→   922→                <FeatureCard
+   923→   923→                  icon={Shield}
+   924→   924→                  title="Safe & Private"
+   925→   925→                  description="No registration required. Your data stays private. No tracking, no ads, no malware."
+   926→   926→                />
+   927→   927→                <FeatureCard
+   928→   928→                  icon={Music}
+   929→   929→                  title="High Quality"
+   930→   930→                  description="Download in up to 1080p for video and 320kbps for audio. Choose the quality that suits you."
+   931→   931→                />
+   932→   932→              </div>
+   933→   933→            </motion.div>
+   934→   934→          )}
+   935→   935→
+   936→   936→          {/* History Panel */}
+   937→   937→          <AnimatePresence>
+   938→   938→            {showHistory && (
+   939→   939→              <motion.div
+   940→   940→                initial={{ opacity: 0, y: 20 }}
+   941→   941→                animate={{ opacity: 1, y: 0 }}
+   942→   942→                exit={{ opacity: 0, y: 20 }}
+   943→   943→                className="mt-6"
+   944→   944→              >
+   945→   945→                <Card className="border-border/40 glass-subtle bg-card/50 overflow-hidden">
+   946→   946→                  <CardContent className="p-4">
+   947→   947→                    <div className="flex items-center justify-between mb-3">
+   948→   948→                      <h2 className="text-sm font-semibold text-foreground flex items-center gap-2">
+   949→   949→                        <History className="w-4 h-4" />
+   950→   950→                        Download History
+   951→   951→                      </h2>
+   952→   952→                      {history.length > 0 && (
+   953→   953→                        <span className="text-[10px] text-muted-foreground">
+   954→   954→                          {history.length} items
+   955→   955→                        </span>
+   956→   956→                      )}
+   957→   957→                    </div>
+   958→   958→
+   959→   959→                    {history.length === 0 ? (
+   960→   960→                      <div className="text-center py-8">
+   961→   961→                        <Clock className="w-8 h-8 text-muted-foreground/30 mx-auto mb-2" />
+   962→   962→                        <p className="text-sm text-muted-foreground">No downloads yet</p>
+   963→   963→                        <p className="text-xs text-muted-foreground/60 mt-1">Your download history will appear here</p>
+   964→   964→                      </div>
+   965→   965→                    ) : (
+   966→   966→                      <ScrollArea className="max-h-96">
+   967→   967→                        <div className="space-y-1.5">
+   968→   968→                          {history.map((item) => (
+   969→   969→                            <HistoryItem key={item.id} item={item} />
+   970→   970→                          ))}
+   971→   971→                        </div>
+   972→   972→                      </ScrollArea>
+   973→   973→                    )}
+   974→   974→                  </CardContent>
+   975→   975→                </Card>
+   976→   976→              </motion.div>
+   977→   977→            )}
+   978→   978→          </AnimatePresence>
+   979→   979→        </div>
+   980→   980→      </main>
+   981→   981→
+   982→   982→      {/* Footer */}
+   983→   983→      <footer className="relative z-10 mt-auto border-t border-border/30">
+   984→   984→        <div className="max-w-5xl mx-auto px-6 py-6">
+   985→   985→          <div className="flex flex-col sm:flex-row items-center justify-between gap-3">
+   986→   986→            <div className="flex items-center gap-2">
+   987→   987→              <div className="w-6 h-6 rounded-lg bg-gradient-to-br from-emerald-500 to-teal-600 flex items-center justify-center">
+   988→   988→                <Zap className="w-3.5 h-3.5 text-white" />
+   989→   989→              </div>
+   990→   990→              <span className="text-sm font-medium text-foreground">VortexTube</span>
+   991→   991→            </div>
+   992→   992→            <p className="text-xs text-muted-foreground text-center">
+   993→   993→              For personal use only. Respect copyright and intellectual property rights.
+   994→   994→            </p>
+   995→   995→            <p className="text-xs text-muted-foreground">
+   996→   996→              &copy; {new Date().getFullYear()} VortexTube
+   997→   997→            </p>
+   998→   998→          </div>
+   999→   999→        </div>
+  1000→  1000→      </footer>
+  1001→  1001→    </div>
+  1002→  1002→  );
+  1003→  1003→}
+  1004→  1004→

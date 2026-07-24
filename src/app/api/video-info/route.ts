@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { fetchWorker } from "@/lib/worker-manager";
 
 // Normalize YouTube URL — strip tracking params, handle all formats
 function normalizeYouTubeUrl(rawUrl: string): { valid: boolean; cleanUrl: string; videoId: string | null } {
@@ -71,10 +72,10 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Forward to download worker with clean URL
-    const workerResponse = await fetch(
-      `http://localhost:3003/api/video-info?url=${encodeURIComponent(cleanUrl)}`,
-      { signal: AbortSignal.timeout(60000) }
+    // Forward to download worker with clean URL (auto-starts worker if needed)
+    const workerResponse = await fetchWorker(
+      `/api/video-info?url=${encodeURIComponent(cleanUrl)}`,
+      { signal: AbortSignal.timeout(70000) }
     );
 
     if (!workerResponse.ok) {
@@ -84,9 +85,11 @@ export async function POST(request: NextRequest) {
       // Map error codes to user-friendly messages
       const errorMessages: Record<string, string> = {
         FETCH_FAILED: "Failed to extract video info. The video may be private, age-restricted, or unavailable in this region.",
-        BOT_BLOCKED: "YouTube is temporarily blocking requests. Please try again in a moment.",
+        BOT_BLOCKED: "YouTube is blocking requests. This is usually temporary — wait a moment and try again, or try a different video.",
         RATE_LIMITED: "Too many requests. Please wait a few seconds and try again.",
-        NOT_FOUND: "Video not found. Please check the URL and try again.",
+        NOT_FOUND: "Video not found. It may be private, deleted, or region-restricted.",
+        ACCESS_DENIED: "This video is age-restricted or requires sign-in. Try a different video.",
+        TIMEOUT: "YouTube took too long to respond. Please try again.",
       };
 
       return NextResponse.json(

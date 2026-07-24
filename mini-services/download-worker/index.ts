@@ -8,22 +8,30 @@ const DOWNLOAD_DIR = join(process.cwd(), "..", "..", "download");
 const YT_DLP_PATH = "/home/z/.local/bin/yt-dlp";
 const STATUS_DIR = join(process.cwd(), "status");
 
-// Strategy: try impersonation first (most reliable), then fallback to player clients
+// INFO_STRATEGIES: ordered from simplest → most aggressive
+// The basic (no flags) strategy works most reliably on this system.
+// Impersonation and player_client are fallbacks for bot-blocked videos.
 const INFO_STRATEGIES = [
+  { args: [], name: "basic extraction" },
+  { args: ["--no-cache-dir"], name: "basic (no cache)" },
   { args: ["--impersonate", "Chrome-136", "--no-check-formats"], name: "Chrome-136 impersonation" },
   { args: ["--impersonate", "Safari-18.4:Ios-18.4", "--no-check-formats"], name: "Safari-iOS impersonation" },
-  { args: ["--impersonate", "Firefox-147", "--no-check-formats"], name: "Firefox impersonation" },
   { args: ["--extractor-args", "youtube:player_client=mediaconnect", "--no-check-formats"], name: "mediaconnect client" },
   { args: ["--extractor-args", "youtube:player_client=web", "--no-check-formats"], name: "web client" },
   { args: ["--extractor-args", "youtube:player_client=tv", "--no-check-formats"], name: "tv client" },
+  { args: ["--extractor-args", "youtube:player_client=ios", "--no-check-formats"], name: "ios client" },
+  { args: ["--extractor-args", "youtube:player_client=android", "--no-check-formats"], name: "android client" },
 ];
 
+// DOWNLOAD_STRATEGIES: same ordering principle
 const DOWNLOAD_STRATEGIES = [
+  { args: [], name: "basic extraction" },
   { args: ["--impersonate", "Chrome-136"], name: "Chrome-136 impersonation" },
   { args: ["--impersonate", "Safari-18.4:Ios-18.4"], name: "Safari-iOS impersonation" },
   { args: ["--extractor-args", "youtube:player_client=mediaconnect"], name: "mediaconnect client" },
   { args: ["--extractor-args", "youtube:player_client=web"], name: "web client" },
   { args: ["--extractor-args", "youtube:player_client=tv"], name: "tv client" },
+  { args: ["--extractor-args", "youtube:player_client=ios"], name: "ios client" },
 ];
 
 // Ensure directories exist
@@ -47,12 +55,23 @@ function setStatus(id: string, status: Record<string, any>) {
 // Sleep helper
 function sleep(ms: number) { return new Promise(r => setTimeout(r, ms)); }
 
-// Detect if error is a YouTube bot block
+// Detect if error is a YouTube bot block (specific patterns only)
 function isBotBlock(message: string): boolean {
   const lower = message.toLowerCase();
   return lower.includes("sign in to confirm") ||
-         lower.includes("bot") ||
-         lower.includes("too many requests");
+         lower.includes("sign in to confirm you're not a bot") ||
+         lower.includes("our systems have detected unusual traffic") ||
+         lower.includes("too many requests") ||
+         lower.includes("http error 429") ||
+         (lower.includes("bot") && lower.includes("traffic"));
+}
+
+// Check if the error is an HTTP 403 / access denied
+function isAccessDenied(message: string): boolean {
+  const lower = message.toLowerCase();
+  return lower.includes("http error 403") ||
+         lower.includes("forbidden") ||
+         lower.includes("age-restricted");
 }
 
 function isNotFoundError(message: string): boolean {
@@ -60,47 +79,74 @@ function isNotFoundError(message: string): boolean {
   return lower.includes("video is unavailable") ||
          lower.includes("not found") ||
          lower.includes("private video") ||
-         lower.includes("members-only");
+         lower.includes("members-only") ||
+         lower.includes("this video is private") ||
+         lower.includes("this live event has ended");
+}
+
+// Check if stderr has any error indicators
+function hasError(stderr: string): boolean {
+  if (!stderr) return false;
+  const lower = stderr.toLowerCase();
+  return lower.includes("error:") ||
+         lower.includes("warning:") && lower.includes("unable to");
 }
 
 // Extract video info with retry across multiple strategies
-function extractVideoInfo(videoUrl: string, callback: (result: { ok: boolean; data?: any; error?: string; code?: string }) => void) {
+function extractVideoInfo(
+  videoUrl: string,
+  callback: (result: { ok: boolean; data?: any; error?: string; code?: string; attempts?: number }) => void
+) {
   let attempt = 0;
+  const startTime = Date.now();
+  const MAX_TOTAL_TIME = 55000; // 55s max total for info extraction
 
   function tryNext() {
+    // Check overall timeout
+    if (Date.now() - startTime > MAX_TOTAL_TIME) {
+      callback({
+        ok: false,
+        error: "YouTube is taking too long to respond. Please try again in a moment.",
+        code: "TIMEOUT",
+        attempts: attempt,
+      });
+      return;
+    }
+
     if (attempt >= INFO_STRATEGIES.length) {
-      callback({ ok: false, error: "YouTube is blocking requests from this server. Try refreshing the page and attempting again. Some videos may work better than others.", code: "BOT_BLOCKED" });
+      callback({
+        ok: false,
+        error: "YouTube is temporarily blocking requests from this server. Please try a different video or wait a minute and retry.",
+        code: "BOT_BLOCKED",
+        attempts: attempt,
+      });
       return;
     }
 
     const strategy = INFO_STRATEGIES[attempt];
     console.log(`[video-info] Attempt ${attempt + 1}/${INFO_STRATEGIES.length}: ${strategy.name} for ${videoUrl}`);
 
+    const baseArgs = [
+      "--no-download", "--no-playlist", "--no-warnings",
+      ...strategy.args,
+      "--print", "%(id)s|%(title)s|%(thumbnail)s|%(duration)s|%(channel)s|%(duration_string)s",
+    ];
+
     execFile(
       YT_DLP_PATH,
-      [
-        "--no-download", "--no-playlist", "--no-warnings",
-        ...strategy.args,
-        "--print", "%(id)s|%(title)s|%(thumbnail)s|%(duration)s|%(channel)s|%(duration_string)s",
-        videoUrl,
-      ],
-      { timeout: 25000, maxBuffer: 1024 * 1024 },
+      [...baseArgs, videoUrl],
+      { timeout: 12000, maxBuffer: 1024 * 1024 },
       (err, stdout, stderr) => {
         const stderrStr = stderr || "";
 
-        if (isNotFoundError(stderrStr)) {
-          callback({ ok: false, error: "Video not found. It may be private, deleted, or region-restricted.", code: "NOT_FOUND" });
-          return;
-        }
-
-        // Check if we got valid stdout data
+        // If process errored but we still got valid stdout data, use it
         if (stdout && stdout.trim().length > 0) {
           const lines = stdout.trim().split("\n").filter((l: string) => l.includes("|"));
           const lastLine = lines[lines.length - 1] || "";
           const parts = lastLine.split("|");
           if (parts.length >= 4 && parts[0] && parts[0].length > 5) {
             const duration = parseInt(parts[3] || "0", 10);
-            console.log(`[video-info] Success with ${strategy.name}`);
+            console.log(`[video-info] ✓ Success with strategy: ${strategy.name} (attempt ${attempt + 1})`);
             callback({
               ok: true,
               data: {
@@ -111,22 +157,37 @@ function extractVideoInfo(videoUrl: string, callback: (result: { ok: boolean; da
                 channel: parts[4] || "",
                 durationString: parts[5] || "",
               },
+              attempts: attempt + 1,
             });
             return;
           }
         }
 
-        // Bot block — try next strategy
-        if (isBotBlock(stderrStr)) {
-          attempt++;
-          // Small delay between retries to avoid rate limiting
-          setTimeout(tryNext, 1000);
+        // Not found — don't retry, fail immediately
+        if (isNotFoundError(stderrStr)) {
+          callback({ ok: false, error: "Video not found. It may be private, deleted, or region-restricted.", code: "NOT_FOUND", attempts: attempt + 1 });
           return;
         }
 
-        // Other error — try next strategy
+        // Access denied — don't retry, fail immediately
+        if (isAccessDenied(stderrStr)) {
+          callback({ ok: false, error: "This video is age-restricted or requires sign-in. Try a different video.", code: "ACCESS_DENIED", attempts: attempt + 1 });
+          return;
+        }
+
+        // Bot block — try next strategy with increasing delay
+        if (isBotBlock(stderrStr) || (err && err.code === 1)) {
+          console.log(`[video-info] ✗ Strategy "${strategy.name}" blocked or failed (attempt ${attempt + 1}/${INFO_STRATEGIES.length})`);
+          attempt++;
+          const delay = Math.min(1500 + attempt * 500, 5000); // 2s, 2.5s, 3s, 3.5s, 4s, 4.5s, 5s
+          setTimeout(tryNext, delay);
+          return;
+        }
+
+        // Any other failure — try next strategy
+        console.log(`[video-info] ✗ Strategy "${strategy.name}" returned no data (attempt ${attempt + 1}/${INFO_STRATEGIES.length})`);
         attempt++;
-        tryNext();
+        setTimeout(tryNext, 800);
       }
     );
   }
@@ -159,7 +220,7 @@ const server = createServer((_req, res) => {
         res.end(JSON.stringify(result.data));
       } else {
         const code = result.code || "FETCH_FAILED";
-        res.writeHead(500, { "Content-Type": "application/json" });
+        res.writeHead(code === "NOT_FOUND" || code === "ACCESS_DENIED" ? 404 : 500, { "Content-Type": "application/json" });
         res.end(JSON.stringify({ error: result.error || "Unknown error", code }));
       }
     });
@@ -261,6 +322,7 @@ async function processDownload(job: { id: string; url: string; format: string; q
 
     const strategy = DOWNLOAD_STRATEGIES[i];
     console.log(`[download] Attempt ${i + 1}/${DOWNLOAD_STRATEGIES.length}: ${strategy.name} for ${job.url}`);
+    setStatus(job.id, { id: job.id, status: "processing", progress: 0, message: `Trying ${strategy.name}...` });
 
     try {
       await downloadWithStrategy(job, strategy.args);
@@ -269,15 +331,16 @@ async function processDownload(job: { id: string; url: string; format: string; q
       const msg = err.message || "";
       if (isBotBlock(msg) && !job.cancelled) {
         console.log(`[download] ${strategy.name} blocked, trying next...`);
-        // Brief cooldown between retries
-        await sleep(1500);
+        // Increasing cooldown between retries
+        await sleep(2000 + i * 1000);
         continue;
       }
+      // Non-bot errors — throw immediately (could be format error, etc.)
       throw err;
     }
   }
 
-  throw new Error("YouTube is temporarily blocking downloads from this server. Please try again in a few minutes.");
+  throw new Error("YouTube is temporarily blocking downloads. Please try again in a few minutes or try a different video.");
 }
 
 function downloadWithStrategy(job: { id: string; url: string; format: string; quality: string; outputPath: string; cancelled: boolean }, extraArgs: string[]): Promise<void> {
@@ -341,12 +404,15 @@ function downloadWithStrategy(job: { id: string; url: string; format: string; qu
       } else if (isBotBlock(stderrOutput)) {
         if (existsSync(job.outputPath)) try { unlinkSync(job.outputPath); } catch {}
         reject(new Error("YouTube bot block"));
+      } else if (stderrOutput.includes("Requested format is not available")) {
+        if (existsSync(job.outputPath)) try { unlinkSync(job.outputPath); } catch {}
+        reject(new Error(`The requested quality (${job.format === "mp4" ? job.quality + "p" : job.quality + "kbps"}) is not available for this video. Please try a different quality.`));
       } else {
-        reject(new Error(`Download failed (exit code ${code})`));
+        reject(new Error(`Download failed: ${stderrOutput.slice(-200) || `exit code ${code}`}`));
       }
     });
 
-    proc.on("error", (err) => reject(new Error(`Failed to start: ${err.message}`)));
+    proc.on("error", (err) => reject(new Error(`Failed to start download: ${err.message}`)));
   });
 }
 

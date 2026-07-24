@@ -24,6 +24,9 @@ import {
   ArrowRight,
   Play,
   Pause,
+  RotateCcw,
+  WifiOff,
+  VideoOff,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -67,6 +70,12 @@ interface DownloadItem {
   error?: string;
 }
 
+interface ErrorInfo {
+  code: string;
+  message: string;
+  isRetrying: boolean;
+}
+
 // Utility functions
 function formatDuration(seconds: number): string {
   if (!seconds || isNaN(seconds)) return "0:00";
@@ -95,6 +104,121 @@ function formatDate(dateStr: string): string {
 }
 
 // ============ Components ============
+
+// ============ Error Retry Card ============
+function ErrorRetryCard({ error, onRetry, onDismiss, isRetrying }: {
+  error: ErrorInfo;
+  onRetry: () => void;
+  onDismiss: () => void;
+  isRetrying: boolean;
+}) {
+  const isBotBlocked = error.code === "BOT_BLOCKED";
+  const isNotFound = error.code === "NOT_FOUND";
+  const isAccessDenied = error.code === "ACCESS_DENIED";
+  const isTimeout = error.code === "TIMEOUT";
+
+  const iconMap: Record<string, React.ElementType> = {
+    BOT_BLOCKED: WifiOff,
+    NOT_FOUND: VideoOff,
+    ACCESS_DENIED: Shield,
+    TIMEOUT: Clock,
+  };
+  const Icon = iconMap[error.code] || AlertCircle;
+
+  const titleMap: Record<string, string> = {
+    BOT_BLOCKED: "YouTube is Blocking Requests",
+    NOT_FOUND: "Video Not Found",
+    ACCESS_DENIED: "Access Restricted",
+    TIMEOUT: "Request Timed Out",
+  };
+  const title = titleMap[error.code] || "Something Went Wrong";
+
+  const tipsMap: Record<string, string[]> = {
+    BOT_BLOCKED: [
+      "Wait 30-60 seconds and try again",
+      "Try a different YouTube video",
+      "Some new or trending videos may be harder to process",
+    ],
+    NOT_FOUND: [
+      "Check if the URL is correct",
+      "The video may have been deleted or made private",
+    ],
+    ACCESS_DENIED: [
+      "Age-restricted videos require sign-in on YouTube",
+      "Try a different, publicly available video",
+    ],
+    TIMEOUT: [
+      "YouTube may be experiencing heavy traffic",
+      "Wait a moment and try again",
+    ],
+  };
+  const tips = tipsMap[error.code] || ["Please try again."];
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 20 }}
+      animate={{ opacity: 1, y: 0 }}
+      exit={{ opacity: 0, y: -20 }}
+    >
+      <Card className="border-destructive/30 bg-destructive/5 overflow-hidden">
+        <CardContent className="p-4">
+          <div className="flex items-start gap-3">
+            <div className="flex-shrink-0 w-10 h-10 rounded-xl bg-destructive/10 flex items-center justify-center mt-0.5">
+              <Icon className="w-5 h-5 text-destructive" />
+            </div>
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center justify-between gap-2">
+                <h3 className="font-semibold text-sm text-foreground">{title}</h3>
+                <button
+                  onClick={onDismiss}
+                  className="flex-shrink-0 p-1 rounded-md hover:bg-muted/50 text-muted-foreground hover:text-foreground transition-colors"
+                >
+                  <XCircle className="w-4 h-4" />
+                </button>
+              </div>
+              <p className="text-xs text-muted-foreground mt-1 leading-relaxed">{error.message}</p>
+
+              {/* Tips */}
+              <div className="mt-3 space-y-1">
+                <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide">Suggestions</p>
+                <ul className="space-y-0.5">
+                  {tips.map((tip, i) => (
+                    <li key={i} className="text-[11px] text-muted-foreground flex items-start gap-1.5">
+                      <span className="text-emerald-500 mt-0.5">•</span>
+                      {tip}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+
+              {/* Retry Button */}
+              {(isBotBlocked || isTimeout) && (
+                <Button
+                  size="sm"
+                  className="mt-3 gap-2 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white"
+                  onClick={onRetry}
+                  disabled={isRetrying}
+                >
+                  {isRetrying ? (
+                    <>
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      Retrying...
+                    </>
+                  ) : (
+                    <>
+                      <RotateCcw className="w-3.5 h-3.5" />
+                      Retry Now
+                    </>
+                  )}
+                </Button>
+              )}
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+    </motion.div>
+  );
+}
 
 function AnimatedBackground() {
   return (
@@ -448,6 +572,7 @@ export default function Home() {
   const [showHistory, setShowHistory] = useState(false);
   const [isConverting, setIsConverting] = useState(false);
   const [hasStarted, setHasStarted] = useState(false);
+  const [errorInfo, setErrorInfo] = useState<ErrorInfo | null>(null);
   const pollingRef = useRef<Map<string, NodeJS.Timeout>>(new Map());
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -543,6 +668,7 @@ export default function Home() {
     setIsLoadingVideo(true);
     setVideoInfo(null);
     setHasStarted(true);
+    setErrorInfo(null);
 
     try {
       const res = await fetch("/api/video-info", {
@@ -554,18 +680,25 @@ export default function Home() {
       if (!res.ok) {
         const errorData = await res.json();
         const code = errorData.code;
-        if (code === "BOT_BLOCKED") {
-          toast.error("YouTube is blocking requests", {
-            description: "This video might be restricted. Try a different video or wait a moment and retry.",
-            duration: 8000,
-            action: {
-              label: "Retry",
-              onClick: () => handleFetchVideoInfo(),
-            },
-          });
+        const message = errorData.error || "Something went wrong. Please try again.";
+
+        // Set inline error card for blockable/retryable errors
+        if (["BOT_BLOCKED", "NOT_FOUND", "ACCESS_DENIED", "TIMEOUT"].includes(code)) {
+          setErrorInfo({ code, message, isRetrying: false });
+          // Also show toast for bot block with retry action
+          if (code === "BOT_BLOCKED" || code === "TIMEOUT") {
+            toast.error("YouTube is blocking requests", {
+              description: message,
+              duration: 8000,
+              action: {
+                label: "Retry",
+                onClick: () => handleFetchVideoInfo(),
+              },
+            });
+          }
           return;
         }
-        throw new Error(errorData.error || "Failed to fetch video info");
+        throw new Error(message);
       }
 
       const data = await res.json();
@@ -864,6 +997,28 @@ export default function Home() {
               </CardContent>
             </Card>
           </motion.div>
+
+          {/* Error Retry Card */}
+          <AnimatePresence>
+            {errorInfo && !isLoadingVideo && !videoInfo && (
+              <motion.div
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -20 }}
+                className="mt-4"
+              >
+                <ErrorRetryCard
+                  error={errorInfo}
+                  onRetry={() => {
+                    setErrorInfo((prev) => prev ? { ...prev, isRetrying: true } : null);
+                    handleFetchVideoInfo();
+                  }}
+                  onDismiss={() => setErrorInfo(null)}
+                  isRetrying={isLoadingVideo}
+                />
+              </motion.div>
+            )}
+          </AnimatePresence>
 
           {/* Active Downloads */}
           <AnimatePresence>

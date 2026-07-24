@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { fetchWorker } from "@/lib/worker-manager";
 
 // Proxy to download worker - cancel a download
 export async function POST(
@@ -8,9 +9,8 @@ export async function POST(
   try {
     const { id } = await params;
 
-    const workerRes = await fetch(`http://localhost:3003/api/cancel/${id}`, {
+    const workerRes = await fetchWorker(`/api/cancel/${id}`, {
       method: "POST",
-      signal: AbortSignal.timeout(5000),
     });
 
     const data = await workerRes.json();

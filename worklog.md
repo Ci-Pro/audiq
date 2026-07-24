@@ -45,3 +45,34 @@ Stage Summary:
 - URL normalization supports all YouTube formats including youtu.be short URLs with query params
 - Error toasts include Retry button for bot-blocked errors
 
+---
+Task ID: fix-blocking-v2
+Agent: Main
+Task: Fix YouTube blocking issue with improved strategies, worker auto-start, and inline error UI
+
+Work Log:
+- Rewrote download worker with 9-strategy retry system (basic → impersonation → player clients)
+- Strategy ordering: basic extraction (no flags) first since it works best, then escalation
+- Added android, ios player clients; added --no-cache-dir strategy; reduced per-attempt timeout to 12s
+- Added overall timeout cap of 55s to prevent infinite waiting
+- Better bot block detection (more specific patterns, not matching generic "bot" substring)
+- Added access denied (age-restricted) and timeout error detection
+- Created worker-manager.ts: auto-starts download worker if not running, with health check and retry
+- Updated all API routes (video-info, worker/download, worker/cancel, download/file) to use worker-manager
+- Built ErrorRetryCard component with:
+  - Different icons per error type (WifiOff, VideoOff, Shield, Clock)
+  - Specific suggestions for each error type
+  - "Retry Now" button for retryable errors
+  - Dismiss button
+- Updated handleFetchVideoInfo to set inline error state (errorInfo)
+- Verified: Rick Astley video extracts in ~2s with basic strategy (attempt 1/9)
+- Verified: Error card appears for blocked videos with Retry button
+- Verified: Retry button works (shows loading state, retries extraction)
+- Browser-verified full flow: URL input → preview → error card → retry
+
+Stage Summary:
+- Worker manager ensures worker is always running (auto-start on demand)
+- 9 strategies tried before giving up, with exponential backoff between retries
+- Inline error card with context-specific suggestions and retry button
+- Specific video `2p9EsyfphOM` remains blocked by YouTube across all strategies (YouTube-side restriction)
+- Most other videos work on the first attempt with basic extraction

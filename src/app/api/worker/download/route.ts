@@ -1,15 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
+import { fetchWorker } from "@/lib/worker-manager";
 
 // Proxy to download worker - starts a download
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
 
-    const workerRes = await fetch("http://localhost:3003/api/download", {
+    const workerRes = await fetchWorker("/api/download", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
-      signal: AbortSignal.timeout(10000),
     });
 
     const data = await workerRes.json();
