@@ -61,3 +61,16 @@ worker.log
 /tool-results/
 /screenshot*.png
 /preview*.png
+
+# Database files
+db/
+*.db
+*.db-journal
+
+# Worker temp files
+mini-services/download-worker/status/
+mini-services/download-worker/downloads/
+mini-services/download-worker/node_modules/
+
+# Branding preview (generated)
+/public/branding-preview.png
