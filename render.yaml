@@ -1,8 +1,8 @@
 services:
   - type: web
-    name: vortextube-worker
+    name: audiq-worker
     runtime: docker
-    repo: https://github.com/YOUR_USERNAME/vortextube
+    repo: https://github.com/YOUR_USERNAME/audiq
     branch: main
     rootDir: mini-services/download-worker
     plan: free

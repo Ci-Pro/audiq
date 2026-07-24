@@ -2,7 +2,7 @@
  * Worker Manager — connects to the remote Render worker service.
  *
  * LOCAL DEV: Uses WORKER_URL=http://localhost:3003, no auth needed.
- * PRODUCTION (Vercel): Uses WORKER_URL=https://vortextube-worker.onrender.com,
+ * PRODUCTION (Vercel): Uses WORKER_URL=https://audiq-worker.onrender.com,
  *                     sends WORKER_SECRET in x-worker-secret header.
  */
 

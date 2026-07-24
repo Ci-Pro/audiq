@@ -1,4 +1,4 @@
-# VortexTube — Deployment Guide (Free Stack)
+# Audiq — Deployment Guide (Free Stack)
 
 ## 🏗️ Architecture
 
@@ -31,7 +31,7 @@
 git init
 git add .
 git commit -m "Initial commit"
-git remote add origin https://github.com/USERNAME/vortextube.git
+git remote add origin https://github.com/USERNAME/audiq.git
 git push -u origin main
 ```
 
@@ -43,7 +43,7 @@ git push -u origin main
 2. Sign in dengan GitHub
 3. Klik **"Create Project"**
 4. Isi:
-   - Project name: `vortextube`
+   - Project name: `audiq`
    - Region: pilih yang terdekat (Singapore / Tokyo)
    - Create a branch: `main`
 5. Klik **"Create project"**
@@ -59,7 +59,7 @@ git push -u origin main
 1. Buka **https://render.com**
 2. Sign in dengan GitHub
 3. Klik **"New"** → **"Web Service"**
-4. Pilih repository `vortextube`
+4. Pilih repository `audiq`
 5. Settings:
    - **Root Directory**: `mini-services/download-worker`
    - **Runtime**: Docker
@@ -71,7 +71,7 @@ git push -u origin main
 8. Tunggu build selesai (~3-5 menit)
 9. Copy URL worker, misalnya:
    ```
-   https://vortextube-worker.onrender.com
+   https://audiq-worker.onrender.com
    ```
 
 ---
@@ -81,7 +81,7 @@ git push -u origin main
 1. Buka **https://vercel.com**
 2. Sign in dengan GitHub
 3. Klik **"Add New"** → **"Project"**
-4. Import repository `vortextube`
+4. Import repository `audiq`
 5. **Configure Project**:
    - Framework Preset: **Next.js**
    - Root Directory: `.` (root)
@@ -93,7 +93,7 @@ git push -u origin main
    | `WORKER_SECRET` | Secret yang sama dengan di Render |
 7. Klik **"Deploy"**
 8. Tunggu build selesai (~2-3 menit)
-9. Website live di `https://vortextube.vercel.app`
+9. Website live di `https://audiq.vercel.app`
 
 ---
 
@@ -143,9 +143,9 @@ npx prisma db push
 
 Kalau Render auto-generate `WORKER_SECRET`, copy nilainya dari Render Dashboard → Environment, lalu tambahkan ke Vercel:
 
-1. Buka Render Dashboard → vortextube-worker → Environment
+1. Buka Render Dashboard → audiq-worker → Environment
 2. Copy value `WORKER_SECRET`
-3. Buka Vercel Dashboard → vortextube → Settings → Environment Variables
+3. Buka Vercel Dashboard → audiq → Settings → Environment Variables
 4. Tambah `WORKER_SECRET` dengan value yang sama
 5. Redeploy: Vercel Dashboard → Deployments → Redeploy
 

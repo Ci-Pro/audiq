@@ -830,10 +830,8 @@ export default function Home() {
       <header className="relative z-10 py-4 px-6">
         <div className="max-w-5xl mx-auto flex items-center justify-between">
           <div className="flex items-center gap-2.5">
-            <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-emerald-500 to-teal-600 flex items-center justify-center shadow-lg shadow-emerald-500/20">
-              <Zap className="w-5 h-5 text-white" />
-            </div>
-            <span className="text-lg font-bold text-foreground tracking-tight">VortexTube</span>
+            <img src="/logo.png" alt="Audiq" className="w-9 h-9 rounded-xl" />
+            <span className="text-lg font-bold text-foreground tracking-tight">Audiq</span>
           </div>
 
           <div className="flex items-center gap-3">
@@ -1139,16 +1137,14 @@ export default function Home() {
         <div className="max-w-5xl mx-auto px-6 py-6">
           <div className="flex flex-col sm:flex-row items-center justify-between gap-3">
             <div className="flex items-center gap-2">
-              <div className="w-6 h-6 rounded-lg bg-gradient-to-br from-emerald-500 to-teal-600 flex items-center justify-center">
-                <Zap className="w-3.5 h-3.5 text-white" />
-              </div>
-              <span className="text-sm font-medium text-foreground">VortexTube</span>
+              <img src="/logo.png" alt="Audiq" className="w-6 h-6 rounded-lg" />
+              <span className="text-sm font-medium text-foreground">Audiq</span>
             </div>
             <p className="text-xs text-muted-foreground text-center">
               For personal use only. Respect copyright and intellectual property rights.
             </p>
             <p className="text-xs text-muted-foreground">
-              &copy; {new Date().getFullYear()} VortexTube
+              &copy; {new Date().getFullYear()} Audiq
             </p>
           </div>
         </div>

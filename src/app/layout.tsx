@@ -15,12 +15,24 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "VortexTube - YouTube to MP3 & MP4 Converter",
+  title: "Audiq - YouTube to MP3 & MP4 Converter",
   description: "Convert YouTube videos to high-quality MP3 and MP4 files. Fast, free, and no registration required.",
   keywords: ["YouTube downloader", "YouTube to MP3", "YouTube to MP4", "video converter", "MP3 converter"],
-  authors: [{ name: "VortexTube" }],
+  authors: [{ name: "Audiq" }],
   icons: {
-    icon: "https://z-cdn.chatglm.cn/z-ai/static/logo.svg",
+    icon: "/favicon.ico",
+    apple: "/apple-touch-icon.png",
+  },
+  openGraph: {
+    title: "Audiq - YouTube to MP3 & MP4 Converter",
+    description: "Convert YouTube videos to high-quality MP3 and MP4 files. Fast, free, and no registration required.",
+    type: "website",
+    siteName: "Audiq",
+  },
+  twitter: {
+    card: "summary",
+    title: "Audiq - YouTube to MP3 & MP4 Converter",
+    description: "Convert YouTube videos to high-quality MP3 and MP4 files. Fast, free, and no registration required.",
   },
 };
 

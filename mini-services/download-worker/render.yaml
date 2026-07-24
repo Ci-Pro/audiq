@@ -1,6 +1,6 @@
 services:
   - type: web
-    name: vortextube-worker
+    name: audiq-worker
     runtime: docker
     plan: free
     envVars:

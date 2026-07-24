@@ -12,8 +12,8 @@ const WORKER_SECRET = process.env.WORKER_SECRET || "";
 
 // Allowed origins for CORS
 const ALLOWED_ORIGINS = [
-  "https://vortextube.vercel.app",
-  "https://vortextube-git-*.vercel.app",
+  "https://audiq.vercel.app",
+  "https://audiq-git-*.vercel.app",
   "http://localhost:3000",
   "http://localhost:5173",
 ];
@@ -52,7 +52,7 @@ const activeJobs = new Map<string, any>();
 function isOriginAllowed(origin: string | undefined): boolean {
   if (!origin) return false;
   if (ALLOWED_ORIGINS.includes(origin)) return true;
-  // Match wildcard patterns like vortextube-git-*.vercel.app
+  // Match wildcard patterns like audiq-git-*.vercel.app
   for (const pattern of ALLOWED_ORIGINS) {
     if (pattern.includes("*")) {
       const regex = new RegExp("^" + pattern.replace(/\*/g, ".*").replace(/\./g, "\\.") + "$");
