@@ -1,0 +1,13 @@
+services:
+  - type: web
+    name: vortextube-worker
+    runtime: docker
+    repo: https://github.com/YOUR_USERNAME/vortextube
+    branch: main
+    rootDir: mini-services/download-worker
+    plan: free
+    envVars:
+      - key: PORT
+        value: "10000"
+      - key: WORKER_SECRET
+        generateValue: true

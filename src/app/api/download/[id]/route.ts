@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { existsSync, readFileSync } from "fs";
-import { join } from "path";
+import { fetchWorker } from "@/lib/worker-manager";
 
 export async function GET(
   _request: NextRequest,
@@ -9,15 +8,6 @@ export async function GET(
 ) {
   try {
     const { id } = await params;
-
-    // Check worker's status file for latest progress
-    const statusPath = join(process.cwd(), "mini-services", "download-worker", "status", `${id}.json`);
-    let workerStatus: Record<string, any> | null = null;
-    if (existsSync(statusPath)) {
-      try {
-        workerStatus = JSON.parse(readFileSync(statusPath, "utf-8"));
-      } catch {}
-    }
 
     // Get database record
     const task = await db.downloadTask.findUnique({
@@ -28,7 +18,20 @@ export async function GET(
       return NextResponse.json({ error: "Download task not found" }, { status: 404 });
     }
 
-    // Merge worker status (takes priority) with database record
+    // Get latest status from remote worker
+    let workerStatus: Record<string, any> | null = null;
+    try {
+      const res = await fetchWorker(`/api/status/${id}`, {
+        signal: AbortSignal.timeout(5000),
+      });
+      if (res.ok) {
+        workerStatus = await res.json();
+      }
+    } catch {
+      // Worker may be down — use DB data only
+    }
+
+    // Merge: worker status takes priority for real-time fields
     const merged = {
       ...task,
       ...(workerStatus?.status ? { status: workerStatus.status } : {}),

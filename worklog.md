@@ -76,3 +76,34 @@ Stage Summary:
 - Inline error card with context-specific suggestions and retry button
 - Specific video `2p9EsyfphOM` remains blocked by YouTube across all strategies (YouTube-side restriction)
 - Most other videos work on the first attempt with basic extraction
+
+---
+Task ID: deploy-free-stack
+Agent: Main
+Task: Setup deployment architecture for Vercel + Neon + Render (all free)
+
+Work Log:
+- Migrated Prisma schema from SQLite to PostgreSQL (Neon compatible)
+- Updated db.ts to disable query logging in production
+- Rewrote worker-manager.ts: removed local worker auto-start, uses WORKER_URL env var + WORKER_SECRET for remote auth
+- Created mini-services/download-worker/Dockerfile (oven/bun:1-alpine + python3 + yt-dlp + ffmpeg)
+- Created render.yaml at root for Render Blueprint deployment
+- Updated worker index.ts: PORT from env, yt-dlp path detection, DOWNLOAD_DIR from env, CORS headers, auth middleware
+- Cleaned up worker package.json (removed unused @prisma/client, socket.io deps)
+- Created vercel.json with build/install commands
+- Updated next.config.ts for Vercel deployment
+- Updated download/[id]/file route: stream directly from remote worker (no local storage)
+- Updated download/[id]/status route: fetch worker status via remote fetchWorker()
+- Created .env.example with all 3 env vars documented
+- Updated .gitignore: added !.env.example, download/, tool-results/, screenshots
+- Created DEPLOY.md with full step-by-step deployment guide (5 steps)
+- Verified locally: worker starts, API chain works, lint clean
+
+Stage Summary:
+- Architecture: Vercel (frontend) → Render (worker+yt-dlp) → Neon (PostgreSQL)
+- All 3 services free tier compatible
+- Worker secured with WORKER_SECRET header authentication
+- CORS enabled for Vercel domains
+- Files streamed from worker, not stored locally
+- Full deployment guide written in DEPLOY.md
+

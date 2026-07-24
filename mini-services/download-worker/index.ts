@@ -3,14 +3,22 @@ import { createReadStream, existsSync, mkdirSync, statSync, unlinkSync, writeFil
 import { join } from "path";
 import { execFile, spawn } from "child_process";
 
-const PORT = 3003;
-const DOWNLOAD_DIR = join(process.cwd(), "..", "..", "download");
-const YT_DLP_PATH = "/home/z/.local/bin/yt-dlp";
+// --- Deployment-ready configuration ---
+const PORT = parseInt(process.env.PORT || "3003", 10);
+const DOWNLOAD_DIR = process.env.DOWNLOAD_DIR || join(process.cwd(), "downloads");
+const YT_DLP_PATH = process.env.YT_DLP_PATH || "/usr/local/bin/yt-dlp";
 const STATUS_DIR = join(process.cwd(), "status");
+const WORKER_SECRET = process.env.WORKER_SECRET || "";
+
+// Allowed origins for CORS
+const ALLOWED_ORIGINS = [
+  "https://vortextube.vercel.app",
+  "https://vortextube-git-*.vercel.app",
+  "http://localhost:3000",
+  "http://localhost:5173",
+];
 
 // INFO_STRATEGIES: ordered from simplest → most aggressive
-// The basic (no flags) strategy works most reliably on this system.
-// Impersonation and player_client are fallbacks for bot-blocked videos.
 const INFO_STRATEGIES = [
   { args: [], name: "basic extraction" },
   { args: ["--no-cache-dir"], name: "basic (no cache)" },
@@ -39,6 +47,41 @@ if (!existsSync(DOWNLOAD_DIR)) mkdirSync(DOWNLOAD_DIR, { recursive: true });
 if (!existsSync(STATUS_DIR)) mkdirSync(STATUS_DIR, { recursive: true });
 
 const activeJobs = new Map<string, any>();
+
+// --- CORS helpers ---
+function isOriginAllowed(origin: string | undefined): boolean {
+  if (!origin) return false;
+  if (ALLOWED_ORIGINS.includes(origin)) return true;
+  // Match wildcard patterns like vortextube-git-*.vercel.app
+  for (const pattern of ALLOWED_ORIGINS) {
+    if (pattern.includes("*")) {
+      const regex = new RegExp("^" + pattern.replace(/\*/g, ".*").replace(/\./g, "\\.") + "$");
+      if (regex.test(origin)) return true;
+    }
+  }
+  return false;
+}
+
+function setCorsHeaders(req: any, res: any) {
+  const origin = req.headers.origin;
+  if (isOriginAllowed(origin)) {
+    res.setHeader("Access-Control-Allow-Origin", origin);
+  }
+  res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type, x-worker-secret");
+  res.setHeader("Access-Control-Max-Age", "86400");
+}
+
+// --- Auth middleware ---
+function isAuthenticated(req: any, res: any): boolean {
+  // If no WORKER_SECRET is configured, skip auth (local dev)
+  if (!WORKER_SECRET) return true;
+  const secret = req.headers["x-worker-secret"];
+  if (secret === WORKER_SECRET) return true;
+  res.writeHead(401, { "Content-Type": "application/json" });
+  res.end(JSON.stringify({ error: "Unauthorized", code: "UNAUTHORIZED" }));
+  return false;
+}
 
 function getStatus(id: string) {
   try {
@@ -82,14 +125,6 @@ function isNotFoundError(message: string): boolean {
          lower.includes("members-only") ||
          lower.includes("this video is private") ||
          lower.includes("this live event has ended");
-}
-
-// Check if stderr has any error indicators
-function hasError(stderr: string): boolean {
-  if (!stderr) return false;
-  const lower = stderr.toLowerCase();
-  return lower.includes("error:") ||
-         lower.includes("warning:") && lower.includes("unable to");
 }
 
 // Extract video info with retry across multiple strategies
@@ -179,7 +214,7 @@ function extractVideoInfo(
         if (isBotBlock(stderrStr) || (err && err.code === 1)) {
           console.log(`[video-info] ✗ Strategy "${strategy.name}" blocked or failed (attempt ${attempt + 1}/${INFO_STRATEGIES.length})`);
           attempt++;
-          const delay = Math.min(1500 + attempt * 500, 5000); // 2s, 2.5s, 3s, 3.5s, 4s, 4.5s, 5s
+          const delay = Math.min(1500 + attempt * 500, 5000);
           setTimeout(tryNext, delay);
           return;
         }
@@ -199,11 +234,25 @@ const server = createServer((_req, res) => {
   const url = new URL(_req.url || "/", `http://localhost:${PORT}`);
   const pathname = url.pathname;
 
+  // Set CORS headers on all responses
+  setCorsHeaders(_req, res);
+
+  // Handle preflight OPTIONS requests
+  if (_req.method === "OPTIONS") {
+    res.writeHead(204);
+    res.end();
+    return;
+  }
+
+  // Health endpoint — no auth required
   if (pathname === "/health") {
     res.writeHead(200, { "Content-Type": "application/json" });
     res.end(JSON.stringify({ status: "ok", jobs: activeJobs.size }));
     return;
   }
+
+  // Auth check for all API routes
+  if (!isAuthenticated(_req, res)) return;
 
   // GET /api/video-info?url=xxx
   if (pathname === "/api/video-info") {
@@ -331,11 +380,9 @@ async function processDownload(job: { id: string; url: string; format: string; q
       const msg = err.message || "";
       if (isBotBlock(msg) && !job.cancelled) {
         console.log(`[download] ${strategy.name} blocked, trying next...`);
-        // Increasing cooldown between retries
         await sleep(2000 + i * 1000);
         continue;
       }
-      // Non-bot errors — throw immediately (could be format error, etc.)
       throw err;
     }
   }
@@ -418,4 +465,7 @@ function downloadWithStrategy(job: { id: string; url: string; format: string; qu
 
 server.listen(PORT, () => {
   console.log(`Download worker running on port ${PORT}`);
+  console.log(`  Download dir: ${DOWNLOAD_DIR}`);
+  console.log(`  yt-dlp path:  ${YT_DLP_PATH}`);
+  console.log(`  Worker secret: ${WORKER_SECRET ? "***configured***" : "***not set (auth disabled)***"}`);
 });

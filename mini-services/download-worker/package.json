@@ -6,10 +6,7 @@
     "dev": "bun --hot index.ts",
     "start": "bun index.ts"
   },
-  "dependencies": {
-    "@prisma/client": "^6.19.2",
-    "socket.io": "^4.8.1"
-  },
+  "dependencies": {},
   "devDependencies": {
     "@types/bun": "^1.2.0"
   }
