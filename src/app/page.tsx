@@ -554,16 +554,25 @@ export default function Home() {
       if (!res.ok) {
         const errorData = await res.json();
         const code = errorData.code;
-        const isBlocking = code === "BOT_BLOCKED" || code === "RATE_LIMITED";
+        if (code === "BOT_BLOCKED") {
+          toast.error("YouTube is blocking requests", {
+            description: "This video might be restricted. Try a different video or wait a moment and retry.",
+            duration: 8000,
+            action: {
+              label: "Retry",
+              onClick: () => handleFetchVideoInfo(),
+            },
+          });
+          return;
+        }
         throw new Error(errorData.error || "Failed to fetch video info");
       }
 
       const data = await res.json();
       setVideoInfo(data);
     } catch (error: any) {
-      const msg = error.message || "Failed to fetch video info.";
       toast.error("Failed to analyze video", {
-        description: msg,
+        description: error.message || "Something went wrong. Please try again.",
         duration: 6000,
       });
     } finally {

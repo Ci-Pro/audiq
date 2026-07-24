@@ -8,74 +8,99 @@ const DOWNLOAD_DIR = join(process.cwd(), "..", "..", "download");
 const YT_DLP_PATH = "/home/z/.local/bin/yt-dlp";
 const STATUS_DIR = join(process.cwd(), "status");
 
-// Player clients to try in order — mediaconnect usually works best
-const PLAYER_CLIENTS = ["mediaconnect", "web", "tv", "ios"];
+// Strategy: try impersonation first (most reliable), then fallback to player clients
+const INFO_STRATEGIES = [
+  { args: ["--impersonate", "Chrome-136", "--no-check-formats"], name: "Chrome-136 impersonation" },
+  { args: ["--impersonate", "Safari-18.4:Ios-18.4", "--no-check-formats"], name: "Safari-iOS impersonation" },
+  { args: ["--impersonate", "Firefox-147", "--no-check-formats"], name: "Firefox impersonation" },
+  { args: ["--extractor-args", "youtube:player_client=mediaconnect", "--no-check-formats"], name: "mediaconnect client" },
+  { args: ["--extractor-args", "youtube:player_client=web", "--no-check-formats"], name: "web client" },
+  { args: ["--extractor-args", "youtube:player_client=tv", "--no-check-formats"], name: "tv client" },
+];
+
+const DOWNLOAD_STRATEGIES = [
+  { args: ["--impersonate", "Chrome-136"], name: "Chrome-136 impersonation" },
+  { args: ["--impersonate", "Safari-18.4:Ios-18.4"], name: "Safari-iOS impersonation" },
+  { args: ["--extractor-args", "youtube:player_client=mediaconnect"], name: "mediaconnect client" },
+  { args: ["--extractor-args", "youtube:player_client=web"], name: "web client" },
+  { args: ["--extractor-args", "youtube:player_client=tv"], name: "tv client" },
+];
 
 // Ensure directories exist
 if (!existsSync(DOWNLOAD_DIR)) mkdirSync(DOWNLOAD_DIR, { recursive: true });
 if (!existsSync(STATUS_DIR)) mkdirSync(STATUS_DIR, { recursive: true });
 
-// Active jobs for cancellation
 const activeJobs = new Map<string, any>();
 
 function getStatus(id: string) {
   try {
-    const path = join(STATUS_DIR, `${id}.json`);
-    if (existsSync(path)) {
-      return JSON.parse(readFileSync(path, "utf-8"));
-    }
+    const p = join(STATUS_DIR, `${id}.json`);
+    if (existsSync(p)) return JSON.parse(readFileSync(p, "utf-8"));
   } catch {}
   return null;
 }
 
 function setStatus(id: string, status: Record<string, any>) {
-  try {
-    writeFileSync(join(STATUS_DIR, `${id}.json`), JSON.stringify(status));
-  } catch {}
+  try { writeFileSync(join(STATUS_DIR, `${id}.json`), JSON.stringify(status)); } catch {}
 }
 
-function updateDB(id: string, data: Record<string, any>) {
-  setStatus(id, { ...getStatus(id), ...data });
+// Sleep helper
+function sleep(ms: number) { return new Promise(r => setTimeout(r, ms)); }
+
+// Detect if error is a YouTube bot block
+function isBotBlock(message: string): boolean {
+  const lower = message.toLowerCase();
+  return lower.includes("sign in to confirm") ||
+         lower.includes("bot") ||
+         lower.includes("too many requests");
 }
 
-// Extract video info with retry across multiple player clients
+function isNotFoundError(message: string): boolean {
+  const lower = message.toLowerCase();
+  return lower.includes("video is unavailable") ||
+         lower.includes("not found") ||
+         lower.includes("private video") ||
+         lower.includes("members-only");
+}
+
+// Extract video info with retry across multiple strategies
 function extractVideoInfo(videoUrl: string, callback: (result: { ok: boolean; data?: any; error?: string; code?: string }) => void) {
   let attempt = 0;
 
-  function tryClient() {
-    const client = PLAYER_CLIENTS[attempt];
-    console.log(`[video-info] Trying player_client=${client} for ${videoUrl}`);
+  function tryNext() {
+    if (attempt >= INFO_STRATEGIES.length) {
+      callback({ ok: false, error: "YouTube is blocking requests from this server. Try refreshing the page and attempting again. Some videos may work better than others.", code: "BOT_BLOCKED" });
+      return;
+    }
+
+    const strategy = INFO_STRATEGIES[attempt];
+    console.log(`[video-info] Attempt ${attempt + 1}/${INFO_STRATEGIES.length}: ${strategy.name} for ${videoUrl}`);
 
     execFile(
       YT_DLP_PATH,
       [
-        "--no-download", "--no-playlist", "--no-warnings", "--no-check-formats",
-        "--extractor-args", `youtube:player_client=${client}`,
+        "--no-download", "--no-playlist", "--no-warnings",
+        ...strategy.args,
         "--print", "%(id)s|%(title)s|%(thumbnail)s|%(duration)s|%(channel)s|%(duration_string)s",
         videoUrl,
       ],
-      { timeout: 30000, maxBuffer: 1024 * 1024 },
+      { timeout: 25000, maxBuffer: 1024 * 1024 },
       (err, stdout, stderr) => {
-        // Check for "bot" or "sign in" errors in stderr
         const stderrStr = stderr || "";
-        const isBotBlock = stderrStr.toLowerCase().includes("sign in to confirm") ||
-                           stderrStr.toLowerCase().includes("bot");
-        const isNotFound = stderrStr.toLowerCase().includes("video is unavailable") ||
-                          stderrStr.toLowerCase().includes("not found") ||
-                          stderrStr.toLowerCase().includes("private video");
 
-        if (isNotFound) {
+        if (isNotFoundError(stderrStr)) {
           callback({ ok: false, error: "Video not found. It may be private, deleted, or region-restricted.", code: "NOT_FOUND" });
           return;
         }
 
-        // Parse stdout even if there was an error (yt-dlp sometimes outputs data before failing)
+        // Check if we got valid stdout data
         if (stdout && stdout.trim().length > 0) {
           const lines = stdout.trim().split("\n").filter((l: string) => l.includes("|"));
           const lastLine = lines[lines.length - 1] || "";
           const parts = lastLine.split("|");
-          if (parts.length >= 4) {
+          if (parts.length >= 4 && parts[0] && parts[0].length > 5) {
             const duration = parseInt(parts[3] || "0", 10);
+            console.log(`[video-info] Success with ${strategy.name}`);
             callback({
               ok: true,
               data: {
@@ -91,33 +116,28 @@ function extractVideoInfo(videoUrl: string, callback: (result: { ok: boolean; da
           }
         }
 
-        // If bot blocked and we have more clients to try
-        if (isBotBlock && attempt < PLAYER_CLIENTS.length - 1) {
+        // Bot block — try next strategy
+        if (isBotBlock(stderrStr)) {
           attempt++;
-          tryClient();
+          // Small delay between retries to avoid rate limiting
+          setTimeout(tryNext, 1000);
           return;
         }
 
-        // All attempts failed
-        if (isBotBlock) {
-          callback({ ok: false, error: "YouTube is temporarily blocking requests. Please wait a moment and try again.", code: "BOT_BLOCKED" });
-        } else if (err) {
-          callback({ ok: false, error: "Failed to extract video info. Please check the URL and try again.", code: "FETCH_FAILED" });
-        } else {
-          callback({ ok: false, error: "Could not parse video information.", code: "PARSE_ERROR" });
-        }
+        // Other error — try next strategy
+        attempt++;
+        tryNext();
       }
     );
   }
 
-  tryClient();
+  tryNext();
 }
 
 const server = createServer((_req, res) => {
   const url = new URL(_req.url || "/", `http://localhost:${PORT}`);
   const pathname = url.pathname;
 
-  // Health check
   if (pathname === "/health") {
     res.writeHead(200, { "Content-Type": "application/json" });
     res.end(JSON.stringify({ status: "ok", jobs: activeJobs.size }));
@@ -138,14 +158,15 @@ const server = createServer((_req, res) => {
         res.writeHead(200, { "Content-Type": "application/json" });
         res.end(JSON.stringify(result.data));
       } else {
+        const code = result.code || "FETCH_FAILED";
         res.writeHead(500, { "Content-Type": "application/json" });
-        res.end(JSON.stringify({ error: result.error || "Unknown error", code: result.code || "UNKNOWN" }));
+        res.end(JSON.stringify({ error: result.error || "Unknown error", code }));
       }
     });
     return;
   }
 
-  // POST /api/download - Start a download
+  // POST /api/download
   if (pathname === "/api/download" && _req.method === "POST") {
     let body = "";
     _req.on("data", (chunk: Buffer) => body += chunk.toString());
@@ -163,11 +184,9 @@ const server = createServer((_req, res) => {
         const job = { id, url: videoUrl, format, quality, outputPath: outputFile, cancelled: false };
         activeJobs.set(id, job);
 
-        // Start async processing
         processDownload(job).catch((err: Error) => {
           console.error(`Download ${id} failed:`, err.message);
           setStatus(id, { id, status: "failed", progress: 0, error: err.message });
-          updateDB(id, { status: "failed", error: err.message });
         });
 
         res.writeHead(200, { "Content-Type": "application/json" });
@@ -200,13 +219,11 @@ const server = createServer((_req, res) => {
     const status = getStatus(fileId);
     const format = status?.format || "mp4";
     const filePath = join(DOWNLOAD_DIR, `${fileId}.${format}`);
-
     if (!existsSync(filePath)) {
       res.writeHead(404);
       res.end("File not found");
       return;
     }
-
     const stat = statSync(filePath);
     const ext = format === "mp3" ? "audio/mpeg" : "video/mp4";
     res.writeHead(200, {
@@ -214,9 +231,7 @@ const server = createServer((_req, res) => {
       "Content-Length": stat.size,
       "Content-Disposition": `attachment; filename="${fileId}.${format}"`,
     });
-
-    const stream = createReadStream(filePath);
-    stream.pipe(res);
+    createReadStream(filePath).pipe(res);
     return;
   }
 
@@ -227,7 +242,6 @@ const server = createServer((_req, res) => {
     if (job) {
       job.cancelled = true;
       setStatus(id, { id, status: "failed", progress: 0, error: "Cancelled by user" });
-      updateDB(id, { status: "failed", error: "Cancelled by user" });
     }
     res.writeHead(200, { "Content-Type": "application/json" });
     res.end(JSON.stringify({ ok: true }));
@@ -238,40 +252,39 @@ const server = createServer((_req, res) => {
   res.end("Not found");
 });
 
-// Download with retry across player clients
+// Download with retry across strategies
 async function processDownload(job: { id: string; url: string; format: string; quality: string; outputPath: string; cancelled: boolean }) {
   setStatus(job.id, { id: job.id, status: "processing", progress: 0, message: "Starting download..." });
-  updateDB(job.id, { status: "processing", progress: 0 });
 
-  for (const client of PLAYER_CLIENTS) {
+  for (let i = 0; i < DOWNLOAD_STRATEGIES.length; i++) {
     if (job.cancelled) break;
 
-    console.log(`[download] Trying player_client=${client} for ${job.url}`);
+    const strategy = DOWNLOAD_STRATEGIES[i];
+    console.log(`[download] Attempt ${i + 1}/${DOWNLOAD_STRATEGIES.length}: ${strategy.name} for ${job.url}`);
+
     try {
-      await downloadWithClient(job, client);
+      await downloadWithStrategy(job, strategy.args);
       return; // Success!
     } catch (err: any) {
       const msg = err.message || "";
-      const isBotBlock = msg.toLowerCase().includes("sign in") || msg.toLowerCase().includes("bot");
-
-      if (isBotBlock && !job.cancelled) {
-        console.log(`[download] ${client} blocked, trying next client...`);
-        continue; // Try next client
+      if (isBotBlock(msg) && !job.cancelled) {
+        console.log(`[download] ${strategy.name} blocked, trying next...`);
+        // Brief cooldown between retries
+        await sleep(1500);
+        continue;
       }
-      throw err; // Re-throw non-recoverable errors
+      throw err;
     }
   }
 
-  // All clients failed
-  throw new Error("YouTube is temporarily blocking downloads. Please try again in a moment.");
+  throw new Error("YouTube is temporarily blocking downloads from this server. Please try again in a few minutes.");
 }
 
-function downloadWithClient(job: { id: string; url: string; format: string; quality: string; outputPath: string; cancelled: boolean }, playerClient: string): Promise<void> {
+function downloadWithStrategy(job: { id: string; url: string; format: string; quality: string; outputPath: string; cancelled: boolean }, extraArgs: string[]): Promise<void> {
   return new Promise<void>((resolve, reject) => {
     const args: string[] = [
-      "--newline", "--no-playlist",
-      "--no-warnings", "--progress", "--progress-delta", "1",
-      "--extractor-args", `youtube:player_client=${playerClient}`,
+      "--newline", "--no-playlist", "--no-warnings", "--progress", "--progress-delta", "1",
+      ...extraArgs,
     ];
 
     if (job.format === "mp3") {
@@ -302,56 +315,38 @@ function downloadWithClient(job: { id: string; url: string; format: string; qual
       const progressMatch = output.match(/(\d+(?:\.\d+)?)%/);
       if (progressMatch) {
         const progress = parseFloat(progressMatch[1]);
-        const status = { id: job.id, status: "processing", progress, message: `Downloading... ${progress.toFixed(1)}%` };
-        setStatus(job.id, status);
-        updateDB(job.id, { progress });
+        setStatus(job.id, { id: job.id, status: "processing", progress, message: `Downloading... ${progress.toFixed(1)}%` });
       }
     });
 
     proc.stderr.on("data", (data: Buffer) => {
       if (job.cancelled) { proc.kill("SIGKILL"); return; }
-      const errStr = data.toString();
-      stderrOutput += errStr;
-      const progressMatch = errStr.match(/(\d+(?:\.\d+)?)%/);
+      stderrOutput += data.toString();
+      const progressMatch = data.toString().match(/(\d+(?:\.\d+)?)%/);
       if (progressMatch) {
         const progress = parseFloat(progressMatch[1]);
         setStatus(job.id, { id: job.id, status: "processing", progress });
-        updateDB(job.id, { progress });
       }
     });
 
     proc.on("close", (code) => {
-      if (job.cancelled) {
-        reject(new Error("Cancelled"));
-        return;
-      }
-
-      const isBotBlock = stderrOutput.toLowerCase().includes("sign in to confirm") ||
-                          stderrOutput.toLowerCase().includes("bot");
+      if (job.cancelled) { reject(new Error("Cancelled")); return; }
 
       if (code === 0 && existsSync(job.outputPath)) {
         try {
           const stat = statSync(job.outputPath);
           setStatus(job.id, { id: job.id, status: "completed", progress: 100, fileSize: stat.size, format: job.format, message: "Download complete!" });
-          updateDB(job.id, { status: "completed", progress: 100, fileSize: stat.size });
           resolve();
-        } catch (err) {
-          reject(new Error("Failed to verify downloaded file"));
-        }
-      } else if (isBotBlock) {
-        // Clean up partial file
-        if (existsSync(job.outputPath)) {
-          try { unlinkSync(job.outputPath); } catch {}
-        }
-        reject(new Error("YouTube bot block — retry with different client"));
+        } catch { reject(new Error("Failed to verify file")); }
+      } else if (isBotBlock(stderrOutput)) {
+        if (existsSync(job.outputPath)) try { unlinkSync(job.outputPath); } catch {}
+        reject(new Error("YouTube bot block"));
       } else {
         reject(new Error(`Download failed (exit code ${code})`));
       }
     });
 
-    proc.on("error", (err) => {
-      reject(new Error(`Failed to start download: ${err.message}`));
-    });
+    proc.on("error", (err) => reject(new Error(`Failed to start: ${err.message}`)));
   });
 }
 

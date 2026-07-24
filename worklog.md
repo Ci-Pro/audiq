@@ -25,3 +25,23 @@ Stage Summary:
 - Files downloaded to /download directory, served via API
 - Next.js dev server on port 3000, worker on port 3003
 - All tests passing: lint clean, no browser errors, full E2E flow verified
+---
+Task ID: fix-bot-block
+Agent: Main
+Task: Fix YouTube bot blocking issue with multi-strategy retry system
+
+Work Log:
+- Installed curl_cffi for browser impersonation support in yt-dlp
+- Updated worker with 6-strategy retry system: Chrome-136, Safari-iOS, Firefox, mediaconnect, web, tv clients
+- Updated video-info API with URL normalization (strip tracking params from youtu.be URLs)
+- Added impersonation as primary strategy (most reliable bypass)
+- Added better error handling with specific error codes (BOT_BLOCKED, NOT_FOUND, etc)
+- Added retry button to error toast notification
+- Installed curl_cffi Python package for impersonation support
+
+Stage Summary:
+- Worker now tries 6 different strategies to bypass YouTube blocks
+- Chrome-136 impersonation works on first try for most videos
+- URL normalization supports all YouTube formats including youtu.be short URLs with query params
+- Error toasts include Retry button for bot-blocked errors
+
