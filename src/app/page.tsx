@@ -526,7 +526,7 @@ export default function Home() {
 
   const extractVideoId = (inputUrl: string): string | null => {
     const match = inputUrl.match(
-      /(?:youtube\.com\/(?:watch\?v=|shorts\/|embed\/|v\/)|youtu\.be\/)([a-zA-Z0-9_-]{11})/
+      /(?:youtube\.com\/(?:watch\?v=|shorts\/|embed\/|v\/|live\/)|youtu\.be\/)([a-zA-Z0-9_-]{11})/
     );
     return match ? match[1] : null;
   };
@@ -553,14 +553,18 @@ export default function Home() {
 
       if (!res.ok) {
         const errorData = await res.json();
+        const code = errorData.code;
+        const isBlocking = code === "BOT_BLOCKED" || code === "RATE_LIMITED";
         throw new Error(errorData.error || "Failed to fetch video info");
       }
 
       const data = await res.json();
       setVideoInfo(data);
     } catch (error: any) {
-      toast.error("Error", {
-        description: error.message || "Failed to fetch video info. Please check the URL.",
+      const msg = error.message || "Failed to fetch video info.";
+      toast.error("Failed to analyze video", {
+        description: msg,
+        duration: 6000,
       });
     } finally {
       setIsLoadingVideo(false);
