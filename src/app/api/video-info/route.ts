@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getVideoInfo } from "@/lib/yt-dlp";
+import { fetchWorker } from "@/lib/worker-manager";
 
 export const maxDuration = 60;
 
@@ -74,43 +74,59 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Extract video info using local yt-dlp
-    const info = await getVideoInfo(cleanUrl);
-    return NextResponse.json({
-      id: info.id,
-      title: info.title,
-      thumbnail: info.thumbnail,
-      duration: info.duration,
-      channel: info.channel,
-    });
-  } catch (error: unknown) {
-    const msg = error instanceof Error ? error.message : "";
-    const errorMap: Record<string, { error: string; code: string; status: number }> = {
-      NOT_FOUND: {
-        error: "Video not found. It may be private, deleted, or region-restricted.",
-        code: "NOT_FOUND",
-        status: 400,
-      },
-      BOT_BLOCKED: {
-        error: "YouTube is blocking requests. This is usually temporary — wait a moment and try again.",
-        code: "BOT_BLOCKED",
-        status: 503,
-      },
-      ACCESS_DENIED: {
-        error: "This video is age-restricted or requires sign-in.",
-        code: "ACCESS_DENIED",
-        status: 403,
-      },
-    };
+    // Proxy to worker's video-info endpoint
+    const workerRes = await fetchWorker(`/api/video-info?url=${encodeURIComponent(cleanUrl)}`);
 
-    const mapped = errorMap[msg];
-    if (mapped) {
+    if (!workerRes.ok) {
+      const errorData = await workerRes.json().catch(() => ({ error: "Worker error", code: "WORKER_ERROR" }));
+
+      const errorMap: Record<string, { error: string; code: string; status: number }> = {
+        NOT_FOUND: {
+          error: "Video not found. It may be private, deleted, or region-restricted.",
+          code: "NOT_FOUND",
+          status: 400,
+        },
+        ACCESS_DENIED: {
+          error: "This video is age-restricted or requires sign-in.",
+          code: "ACCESS_DENIED",
+          status: 403,
+        },
+        BOT_BLOCKED: {
+          error: "YouTube is blocking requests. This is usually temporary — wait a moment and try again.",
+          code: "BOT_BLOCKED",
+          status: 503,
+        },
+        TIMEOUT: {
+          error: "YouTube is taking too long to respond. Please try again in a moment.",
+          code: "TIMEOUT",
+          status: 504,
+        },
+      };
+
+      const mapped = errorMap[errorData.code];
+      if (mapped) {
+        return NextResponse.json(
+          { error: mapped.error, code: mapped.code, videoId: null },
+          { status: mapped.status }
+        );
+      }
+
+      console.error("Video info worker error:", errorData);
       return NextResponse.json(
-        { error: mapped.error, code: mapped.code, videoId: null },
-        { status: mapped.status }
+        { error: "Something went wrong. Please try again.", code: "SERVER_ERROR" },
+        { status: workerRes.status }
       );
     }
 
+    const data = await workerRes.json();
+    return NextResponse.json({
+      id: data.videoId,
+      title: data.title,
+      thumbnail: data.thumbnail,
+      duration: data.duration,
+      channel: data.channel,
+    });
+  } catch (error: unknown) {
     console.error("Video info error:", error);
     return NextResponse.json(
       { error: "Something went wrong. Please try again.", code: "SERVER_ERROR" },

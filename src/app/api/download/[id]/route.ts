@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
+import { fetchWorker } from "@/lib/worker-manager";
 
 export async function GET(
   _request: NextRequest,
@@ -8,7 +9,59 @@ export async function GET(
   try {
     const { id } = await params;
 
-    // Get database record directly — no remote worker needed
+    // Try to get real-time status from the worker first
+    try {
+      const workerRes = await fetchWorker(`/api/status/${id}`, {
+        signal: AbortSignal.timeout(5000),
+      });
+
+      if (workerRes.ok) {
+        const workerStatus = await workerRes.json();
+
+        // Sync worker status back to DB for history persistence
+        if (workerStatus.status === "completed" && workerStatus.fileSize) {
+          await db.downloadTask.update({
+            where: { id },
+            data: {
+              status: "completed",
+              progress: 100,
+              fileSize: workerStatus.fileSize,
+            },
+          }).catch(() => {});
+        } else if (workerStatus.status === "failed") {
+          await db.downloadTask.update({
+            where: { id },
+            data: {
+              status: "failed",
+              error: workerStatus.error || workerStatus.message || "Download failed",
+            },
+          }).catch(() => {});
+        } else if (workerStatus.status === "processing") {
+          await db.downloadTask.update({
+            where: { id },
+            data: {
+              status: "processing",
+              progress: Math.round(workerStatus.progress || 0),
+            },
+          }).catch(() => {});
+        }
+
+        // Return worker status (most up-to-date)
+        return NextResponse.json({
+          id,
+          status: workerStatus.status,
+          progress: Math.round(workerStatus.progress || 0),
+          message: workerStatus.message || "",
+          fileSize: workerStatus.fileSize || null,
+          format: workerStatus.format || null,
+          error: workerStatus.error || null,
+        });
+      }
+    } catch {
+      // Worker unreachable — fall back to DB
+    }
+
+    // Fallback: get from database
     const task = await db.downloadTask.findUnique({
       where: { id },
     });
