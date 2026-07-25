@@ -698,6 +698,16 @@ export default function Home() {
           }
           return;
         }
+
+        // Handle server warming up (SnapDeploy container waking)
+        if (code === "WARMING_UP") {
+          toast("Server is starting up...", {
+            description: "The download server is waking up. Please try again in a few seconds.",
+            duration: 5000,
+          });
+          return;
+        }
+
         throw new Error(message);
       }
 

@@ -1,22 +1,21 @@
 import { NextRequest, NextResponse } from "next/server";
 import { fetchWorker } from "@/lib/worker-manager";
 
-export const maxDuration = 60;
+export const maxDuration = 120;
+
+function isHtmlResponse(text: string): boolean {
+  return text.trimStart().startsWith("<!DOCTYPE") || text.trimStart().startsWith("<html");
+}
 
 // Normalize YouTube URL — strip tracking params, handle all formats
 function normalizeYouTubeUrl(rawUrl: string): { valid: boolean; cleanUrl: string; videoId: string | null } {
   try {
     const parsed = new URL(rawUrl);
 
-    // Extract video ID from various YouTube URL formats
     const patterns = [
-      // youtube.com/watch?v=...
       /(?:youtube\.com\/watch\?v=|youtube\.com\/embed\/|youtube\.com\/v\/)([a-zA-Z0-9_-]{11})/,
-      // youtube.com/shorts/...
       /youtube\.com\/shorts\/([a-zA-Z0-9_-]{11})/,
-      // youtu.be/...
       /youtu\.be\/([a-zA-Z0-9_-]{11})/,
-      // youtube.com/live/...
       /youtube\.com\/live\/([a-zA-Z0-9_-]{11})/,
     ];
 
@@ -33,11 +32,9 @@ function normalizeYouTubeUrl(rawUrl: string): { valid: boolean; cleanUrl: string
       return { valid: false, cleanUrl: rawUrl, videoId: null };
     }
 
-    // Rebuild a clean URL: youtube.com/watch?v=VIDEO_ID
     const cleanUrl = `https://www.youtube.com/watch?v=${videoId}`;
     return { valid: true, cleanUrl, videoId };
   } catch {
-    // Try regex fallback for non-standard URLs
     const simpleMatch = rawUrl.match(
       /(?:youtube\.com\/(?:watch\?v=|shorts\/|embed\/|v\/|live\/)|youtu\.be\/)([a-zA-Z0-9_-]{11})/
     );
@@ -60,9 +57,7 @@ export async function POST(request: NextRequest) {
     }
 
     const trimmed = url.trim();
-
-    // Validate and normalize YouTube URL
-    const { valid, cleanUrl, videoId } = normalizeYouTubeUrl(trimmed);
+    const { valid, cleanUrl } = normalizeYouTubeUrl(trimmed);
 
     if (!valid) {
       return NextResponse.json(
@@ -78,7 +73,16 @@ export async function POST(request: NextRequest) {
     const workerRes = await fetchWorker(`/api/video-info?url=${encodeURIComponent(cleanUrl)}`);
 
     if (!workerRes.ok) {
-      const errorData = await workerRes.json().catch(() => ({ error: "Worker error", code: "WORKER_ERROR" }));
+      // Read response as text first to handle both JSON and plain text responses
+      const responseText = await workerRes.text().catch(() => "");
+      console.error(`[video-info] Worker error: status=${workerRes.status}, body=${responseText.slice(0, 500)}`);
+
+      let errorData: { error?: string; code?: string };
+      try {
+        errorData = JSON.parse(responseText);
+      } catch {
+        errorData = { error: responseText || `Worker returned status ${workerRes.status}`, code: "WORKER_ERROR" };
+      }
 
       const errorMap: Record<string, { error: string; code: string; status: number }> = {
         NOT_FOUND: {
@@ -103,6 +107,24 @@ export async function POST(request: NextRequest) {
         },
       };
 
+      // Handle worker auth failure
+      if (workerRes.status === 401 || responseText.includes("Unauthorized")) {
+        console.error("[video-info] Worker authentication failed — check WORKER_SECRET");
+        return NextResponse.json(
+          { error: "Worker authentication error. Please try again.", code: "SERVER_ERROR" },
+          { status: 500 }
+        );
+      }
+
+      // Handle container still waking (HTML page returned)
+      if (isHtmlResponse(responseText)) {
+        console.error("[video-info] Container still sleeping");
+        return NextResponse.json(
+          { error: "Server is starting up. Please wait a moment and try again.", code: "WARMING_UP" },
+          { status: 503 }
+        );
+      }
+
       const mapped = errorMap[errorData.code];
       if (mapped) {
         return NextResponse.json(
@@ -111,10 +133,9 @@ export async function POST(request: NextRequest) {
         );
       }
 
-      console.error("Video info worker error:", errorData);
       return NextResponse.json(
         { error: "Something went wrong. Please try again.", code: "SERVER_ERROR" },
-        { status: workerRes.status }
+        { status: workerRes.status || 500 }
       );
     }
 
