@@ -10,7 +10,7 @@
 └──────────┬──────────────────────────┘
            │ fetchWorker() → WORKER_URL
      ┌─────▼──────────────┐
-     │  ZEABUR (Worker)     │  ← GRATIS
+     │  SNAPDEPLOY (Worker)│  ← GRATIS
      │  yt-dlp + Bun       │
      │  Docker container    │
      │  Port (auto-inject)  │
@@ -74,24 +74,24 @@ git push -u origin main
 
 ---
 
-### STEP 4: Deploy Worker ke Zeabur
+### STEP 4: Deploy Worker ke SnapDeploy
 
-1. Buka **https://dash.zeabur.com**
-2. Sign in dengan GitHub (akun Ci-Pro)
-3. Klik **"Create Project"** → kasih nama `audiq`
-4. Di dalam project, klik **"Add Service"** → **"Git"**
-5. Pilih repository **Ci-Pro/audiq** → branch `main`
-6. Zeabur akan auto-detect Dockerfile
-7. **PENTING**: Klik service yang baru terbuat → masuk ke **Settings**:
-   - **Root Directory**: ketik `mini-services/download-worker`
-   - **Environment Variables**: klik **"Generate"** untuk private variable:
-     - `WORKER_SECRET` = `audiq-secret-abc123xyz` (atau random apapun)
-8. Klik **"Deploy"**
-9. Tunggu build selesai (~3-5 menit)
-10. Setelah selesai, buka tab **"Networking"** → copy **Public URL**, misalnya:
-    ```
-    https://audiq-worker-something.zeabur.app
-    ```
+1. Buka **https://snapdeploy.dev**
+2. Klik **"Sign Up"** dengan GitHub (akun Ci-Pro)
+   - **Tidak perlu credit card!**
+3. Klik **"New Container"** → **"Deploy from GitHub"**
+4. Pilih repository **Ci-Pro/audiq** → branch **main**
+5. SnapDeploy akan auto-detect Dockerfile
+6. ⚠️ **PENTING**: Klik **Settings** pada container:
+   - **Dockerfile name**: ketik `Dockerfile.worker` (bukan Dockerfile default)
+   - **Environment Variables**:
+     - `WORKER_SECRET` = `audiq-secret-abc123xyz` (random string apapun)
+   - Klik **Save & Restart**
+7. Tunggu build selesai (~3-5 menit)
+8. Copy **Container URL**, misalnya:
+   ```
+   https://audiq-worker-xxxx.snapdeploy.app
+   ```
 
 ---
 
@@ -101,8 +101,8 @@ git push -u origin main
 2. Tambah 2 env var:
    | Key | Value |
    |-----|-------|
-   | `WORKER_URL` | URL Zeabur dari Step 4 |
-   | `WORKER_SECRET` | Secret yang sama dengan di Zeabur |
+   | `WORKER_URL` | URL SnapDeploy dari Step 4 |
+   | `WORKER_SECRET` | Secret yang sama dengan di SnapDeploy |
 3. Pilih **Production + Preview + Development**
 4. Klik **Save**
 5. Redeploy: Vercel Dashboard → Deployments → titik tiga → **Redeploy**
@@ -125,12 +125,14 @@ npx prisma db push
 
 ## ⚠️ Important Notes (Free Tier)
 
-### Zeabur Free Plan
-- **No credit card required** — langsung sign up pakai GitHub
-- **Resource terbatas** — cukup untuk worker kecil
-- **Auto-sleep**: Service bisa sleep jika tidak ada traffic
+### SnapDeploy Free Tier
+- **No credit card required** — sign up langsung pakai GitHub
+- **2 containers** gratis
+- **100 jam runtime/bulan** (cukup untuk pemakaian normal)
+- **Auto-sleep**: Container otomatis sleep saat tidak ada traffic
+- **Auto-wake**: Container otomatis bangun saat ada request
 - **Cold start**: ~20-30 detik setelah sleep
-- **1 Project** gratis dengan beberapa service
+- **10 deploys/hari**
 
 ### Neon Free Tier
 - **0.5 GB** storage
@@ -146,7 +148,7 @@ npx prisma db push
 
 ## 🔄 Update Worker Secret
 
-1. Buka Zeabur Dashboard → audiq-worker → Settings → Environment Variables
+1. Buka SnapDeploy Dashboard → audiq-worker → Settings → Environment Variables
 2. Copy value `WORKER_SECRET`
 3. Buka Vercel Dashboard → audiq → Settings → Environment Variables
 4. Tambah `WORKER_SECRET` dengan value yang sama
@@ -164,5 +166,5 @@ npx prisma db push
 
 Kalau error "Worker not available":
 - Cek WORKER_URL di Vercel env sudah benar
-- Buka Zeabur dashboard, pastikan worker status "Running"
-- Kalau worker sedang sleep, refresh halaman (butuh ~20s cold start)
+- Buka SnapDeploy dashboard, pastikan container status "Running"
+- Kalau container sedang sleep, refresh halaman (butuh ~20s cold start)
