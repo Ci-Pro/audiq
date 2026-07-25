@@ -107,3 +107,24 @@ Stage Summary:
 - Files streamed from worker, not stored locally
 - Full deployment guide written in DEPLOY.md
 
+
+---
+Task ID: 6
+Agent: Main
+Task: Implement yt-dlp directly in Vercel (eliminate external worker dependency)
+
+Work Log:
+- Created src/lib/yt-dlp.ts - downloads yt-dlp binary at runtime to /tmp, caches it
+- Rewrote src/app/api/video-info/route.ts - uses local yt-dlp instead of fetchWorker
+- Rewrote src/app/api/worker/download/route.ts - downloads directly in Vercel function
+- Rewrote src/app/api/download/[id]/file/route.ts - reads from local /tmp filesystem
+- Updated src/app/api/download/[id]/route.ts - removed worker status merge, DB-only
+- Added maxDuration exports for Vercel function timeout control
+- Lint passed, pushed to GitHub
+
+Stage Summary:
+- Eliminated ALL external worker dependencies (SnapDeploy/Render/Koyeb)
+- Audio format changed from MP3 to M4A (no ffmpeg needed on Vercel)
+- Video format stays MP4
+- Architecture simplified to: Vercel + Neon only (2 platforms, both free)
+- Pushed to GitHub: commit e243402
