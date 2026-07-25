@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
-import { fetchWorker } from "@/lib/worker-manager";
+import { getVideoInfo } from "@/lib/yt-dlp";
+
+export const maxDuration = 60;
 
 // Normalize YouTube URL — strip tracking params, handle all formats
 function normalizeYouTubeUrl(rawUrl: string): { valid: boolean; cleanUrl: string; videoId: string | null } {
@@ -72,45 +74,43 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Forward to download worker with clean URL (auto-starts worker if needed)
-    const workerResponse = await fetchWorker(
-      `/api/video-info?url=${encodeURIComponent(cleanUrl)}`,
-      { signal: AbortSignal.timeout(70000) }
-    );
+    // Extract video info using local yt-dlp
+    const info = await getVideoInfo(cleanUrl);
+    return NextResponse.json({
+      id: info.id,
+      title: info.title,
+      thumbnail: info.thumbnail,
+      duration: info.duration,
+      channel: info.channel,
+    });
+  } catch (error: unknown) {
+    const msg = error instanceof Error ? error.message : "";
+    const errorMap: Record<string, { error: string; code: string; status: number }> = {
+      NOT_FOUND: {
+        error: "Video not found. It may be private, deleted, or region-restricted.",
+        code: "NOT_FOUND",
+        status: 400,
+      },
+      BOT_BLOCKED: {
+        error: "YouTube is blocking requests. This is usually temporary — wait a moment and try again.",
+        code: "BOT_BLOCKED",
+        status: 503,
+      },
+      ACCESS_DENIED: {
+        error: "This video is age-restricted or requires sign-in.",
+        code: "ACCESS_DENIED",
+        status: 403,
+      },
+    };
 
-    if (!workerResponse.ok) {
-      const errorData = await workerResponse.json().catch(() => ({}));
-      const errorCode = errorData.code || "FETCH_FAILED";
-
-      // Map error codes to user-friendly messages
-      const errorMessages: Record<string, string> = {
-        FETCH_FAILED: "Failed to extract video info. The video may be private, age-restricted, or unavailable in this region.",
-        BOT_BLOCKED: "YouTube is blocking requests. This is usually temporary — wait a moment and try again, or try a different video.",
-        RATE_LIMITED: "Too many requests. Please wait a few seconds and try again.",
-        NOT_FOUND: "Video not found. It may be private, deleted, or region-restricted.",
-        ACCESS_DENIED: "This video is age-restricted or requires sign-in. Try a different video.",
-        TIMEOUT: "YouTube took too long to respond. Please try again.",
-      };
-
+    const mapped = errorMap[msg];
+    if (mapped) {
       return NextResponse.json(
-        {
-          error: errorMessages[errorCode] || errorData.error || "Failed to extract video info. Please try again.",
-          code: errorCode,
-          videoId,
-        },
-        { status: workerResponse.status === 400 ? 400 : 500 }
+        { error: mapped.error, code: mapped.code, videoId: null },
+        { status: mapped.status }
       );
     }
 
-    const videoInfo = await workerResponse.json();
-    return NextResponse.json(videoInfo);
-  } catch (error: any) {
-    if (error.name === "TimeoutError" || error.name === "AbortError") {
-      return NextResponse.json(
-        { error: "Request timed out. YouTube may be slow right now — please try again.", code: "TIMEOUT" },
-        { status: 504 }
-      );
-    }
     console.error("Video info error:", error);
     return NextResponse.json(
       { error: "Something went wrong. Please try again.", code: "SERVER_ERROR" },

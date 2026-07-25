@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { fetchWorker } from "@/lib/worker-manager";
 
 export async function GET(
   _request: NextRequest,
@@ -9,39 +8,19 @@ export async function GET(
   try {
     const { id } = await params;
 
-    // Get database record
+    // Get database record directly — no remote worker needed
     const task = await db.downloadTask.findUnique({
       where: { id },
     });
 
     if (!task) {
-      return NextResponse.json({ error: "Download task not found" }, { status: 404 });
+      return NextResponse.json(
+        { error: "Download task not found" },
+        { status: 404 }
+      );
     }
 
-    // Get latest status from remote worker
-    let workerStatus: Record<string, any> | null = null;
-    try {
-      const res = await fetchWorker(`/api/status/${id}`, {
-        signal: AbortSignal.timeout(5000),
-      });
-      if (res.ok) {
-        workerStatus = await res.json();
-      }
-    } catch {
-      // Worker may be down — use DB data only
-    }
-
-    // Merge: worker status takes priority for real-time fields
-    const merged = {
-      ...task,
-      ...(workerStatus?.status ? { status: workerStatus.status } : {}),
-      ...(workerStatus?.progress !== undefined ? { progress: workerStatus.progress } : {}),
-      ...(workerStatus?.fileSize ? { fileSize: workerStatus.fileSize } : {}),
-      ...(workerStatus?.error ? { error: workerStatus.error } : {}),
-      ...(workerStatus?.format ? { format: workerStatus.format } : {}),
-    };
-
-    return NextResponse.json(merged);
+    return NextResponse.json(task);
   } catch (error) {
     console.error("Get download error:", error);
     return NextResponse.json(

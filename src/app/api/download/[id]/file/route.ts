@@ -1,5 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
-import { fetchWorker } from "@/lib/worker-manager";
+import { existsSync, statSync, createReadStream } from "fs";
+import { db } from "@/lib/db";
+
+export const maxDuration = 60;
 
 export async function GET(
   _request: NextRequest,
@@ -8,31 +11,43 @@ export async function GET(
   try {
     const { id } = await params;
 
-    // Always fetch from the remote worker
-    const workerRes = await fetchWorker(`/api/file/${id}`);
-
-    if (!workerRes.ok) {
-      return NextResponse.json({ error: "File not found or expired" }, { status: 404 });
+    const task = await db.downloadTask.findUnique({ where: { id } });
+    if (!task || task.status !== "completed" || !task.filePath) {
+      return NextResponse.json(
+        { error: "File not found or not ready" },
+        { status: 404 }
+      );
     }
 
-    // Stream the response from worker to client
-    const body = workerRes.body;
-    const contentType = workerRes.headers.get("Content-Type") || "application/octet-stream";
-    const contentLength = workerRes.headers.get("Content-Length");
-    const disposition = workerRes.headers.get("Content-Disposition");
+    // Check if file exists in /tmp
+    if (!existsSync(task.filePath)) {
+      return NextResponse.json(
+        { error: "File expired. Please convert again." },
+        { status: 410 }
+      );
+    }
 
-    return new NextResponse(body, {
+    const stats = statSync(task.filePath);
+    const ext =
+      task.filePath.split(".").pop() ||
+      (task.format === "audio" ? "m4a" : "mp4");
+    const mimeType = task.format === "audio" ? "audio/mp4" : "video/mp4";
+    const safeTitle = (task.title || "download").replace(/[^a-zA-Z0-9 ]/g, "");
+
+    const fileStream = createReadStream(task.filePath);
+
+    return new NextResponse(fileStream as unknown as BodyInit, {
       headers: {
-        "Content-Type": contentType,
-        "Content-Disposition": disposition || `attachment; filename="${id}.mp4"`,
-        ...(contentLength ? { "Content-Length": contentLength } : {}),
-        "Cache-Control": "public, max-age=600",
+        "Content-Type": mimeType,
+        "Content-Length": stats.size.toString(),
+        "Content-Disposition": `attachment; filename="${safeTitle}.${ext}"`,
+        "Cache-Control": "public, max-age=3600",
       },
     });
   } catch (error) {
-    console.error("File download error:", error);
+    console.error("File serve error:", error);
     return NextResponse.json(
-      { error: "Failed to download file. It may have expired — try converting again." },
+      { error: "Failed to download file" },
       { status: 500 }
     );
   }
