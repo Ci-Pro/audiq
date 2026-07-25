@@ -8,6 +8,6 @@ services:
     plan: free
     envVars:
       - key: PORT
-        value: "10000"
+        value: "8080"
       - key: WORKER_SECRET
         generateValue: true

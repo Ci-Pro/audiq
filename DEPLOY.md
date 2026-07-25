@@ -10,10 +10,10 @@
 └──────────┬──────────────────────────┘
            │ fetchWorker() → WORKER_URL
      ┌─────▼──────────────┐
-     │  KOYEB (Worker)     │  ← GRATIS
+     │  ZEABUR (Worker)     │  ← GRATIS
      │  yt-dlp + Bun       │
      │  Docker container    │
-     │  Port (auto)         │
+     │  Port (auto-inject)  │
      └──────┬──────────────┘
             │
      ┌──────▼──────────────┐
@@ -74,26 +74,24 @@ git push -u origin main
 
 ---
 
-### STEP 4: Deploy Worker ke Koyeb
+### STEP 4: Deploy Worker ke Zeabur
 
-1. Buka **https://app.koyeb.com**
-2. Sign in dengan GitHub
-3. Klik **"Create Service"**
-4. Pilih **"GitHub"** → connect repo **Ci-Pro/audiq**
-5. Settings:
-   - **Branch**: `main`
-   - **Root Directory**: `mini-services/download-worker`
-   - **Build type**: `Dockerfile`
-   - **Instance type**: **Nano** (gratis)
-   - **Regions**: pilih yang terdekat (Singapore)
-6. Environment Variables:
-   - `WORKER_SECRET` = generate random string (contoh: `audiq-secret-xyz123`)
-7. Klik **"Deploy"**
-8. Tunggu build selesai (~3-5 menit)
-9. Copy **Service URL** dari overview, misalnya:
-   ```
-   https://audiq-worker-xxxx.koyeb.app
-   ```
+1. Buka **https://dash.zeabur.com**
+2. Sign in dengan GitHub (akun Ci-Pro)
+3. Klik **"Create Project"** → kasih nama `audiq`
+4. Di dalam project, klik **"Add Service"** → **"Git"**
+5. Pilih repository **Ci-Pro/audiq** → branch `main`
+6. Zeabur akan auto-detect Dockerfile
+7. **PENTING**: Klik service yang baru terbuat → masuk ke **Settings**:
+   - **Root Directory**: ketik `mini-services/download-worker`
+   - **Environment Variables**: klik **"Generate"** untuk private variable:
+     - `WORKER_SECRET` = `audiq-secret-abc123xyz` (atau random apapun)
+8. Klik **"Deploy"**
+9. Tunggu build selesai (~3-5 menit)
+10. Setelah selesai, buka tab **"Networking"** → copy **Public URL**, misalnya:
+    ```
+    https://audiq-worker-something.zeabur.app
+    ```
 
 ---
 
@@ -103,11 +101,11 @@ git push -u origin main
 2. Tambah 2 env var:
    | Key | Value |
    |-----|-------|
-   | `WORKER_URL` | URL Koyeb dari Step 4 (contoh: `https://audiq-worker-xxxx.koyeb.app`) |
-   | `WORKER_SECRET` | Secret yang sama dengan di Koyeb |
+   | `WORKER_URL` | URL Zeabur dari Step 4 |
+   | `WORKER_SECRET` | Secret yang sama dengan di Zeabur |
 3. Pilih **Production + Preview + Development**
 4. Klik **Save**
-5. Redeploy: Vercel Dashboard → Deployments → Redeploy
+5. Redeploy: Vercel Dashboard → Deployments → titik tiga → **Redeploy**
 
 ---
 
@@ -127,12 +125,12 @@ npx prisma db push
 
 ## ⚠️ Important Notes (Free Tier)
 
-### Koyeb Free Tier (Nano)
-- **1 vCPU**, **128MB RAM**, **2GB disk**
-- **Spin-down**: Service mati setelah 15 menit tidak ada request
-- **Cold start**: Request pertama setelah spin-down butuh ~20 detik
-- **Timeout**: Request max 5 menit
-- **1 Service** gratis
+### Zeabur Free Plan
+- **No credit card required** — langsung sign up pakai GitHub
+- **Resource terbatas** — cukup untuk worker kecil
+- **Auto-sleep**: Service bisa sleep jika tidak ada traffic
+- **Cold start**: ~20-30 detik setelah sleep
+- **1 Project** gratis dengan beberapa service
 
 ### Neon Free Tier
 - **0.5 GB** storage
@@ -148,9 +146,7 @@ npx prisma db push
 
 ## 🔄 Update Worker Secret
 
-Kalau Koyeb generate `WORKER_SECRET`, copy nilainya dari Koyeb Dashboard → Environment, lalu tambahkan ke Vercel:
-
-1. Buka Koyeb Dashboard → audiq-worker → Environment Variables
+1. Buka Zeabur Dashboard → audiq-worker → Settings → Environment Variables
 2. Copy value `WORKER_SECRET`
 3. Buka Vercel Dashboard → audiq → Settings → Environment Variables
 4. Tambah `WORKER_SECRET` dengan value yang sama
@@ -168,5 +164,5 @@ Kalau Koyeb generate `WORKER_SECRET`, copy nilainya dari Koyeb Dashboard → Env
 
 Kalau error "Worker not available":
 - Cek WORKER_URL di Vercel env sudah benar
-- Buka Koyeb dashboard, pastikan worker status "Running"
-- Kalau worker sedang spin-down, refresh halaman (butuh ~20s cold start)
+- Buka Zeabur dashboard, pastikan worker status "Running"
+- Kalau worker sedang sleep, refresh halaman (butuh ~20s cold start)

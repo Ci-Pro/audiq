@@ -18,8 +18,8 @@ COPY index.ts ./
 # Create download directory
 RUN mkdir -p /app/downloads /app/status
 
-# Koyeb/Render inject PORT via env; 8000 as default fallback
-ENV PORT=8000
-EXPOSE 8000
+# Zeabur injects PORT automatically; 8080 as default fallback
+ENV PORT=8080
+EXPOSE 8080
 
 CMD ["bun", "index.ts"]
