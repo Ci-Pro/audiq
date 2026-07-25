@@ -18,8 +18,8 @@ COPY index.ts ./
 # Create download directory
 RUN mkdir -p /app/downloads /app/status
 
-# Render requires PORT=10000
-ENV PORT=10000
-EXPOSE 10000
+# Koyeb/Render inject PORT via env; 8000 as default fallback
+ENV PORT=8000
+EXPOSE 8000
 
 CMD ["bun", "index.ts"]

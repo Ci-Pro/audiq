@@ -6,14 +6,14 @@
 ┌──────────────────────────────────────┐
 │     VERCEL (Frontend + API Proxy)    │  ← GRATIS
 │  Next.js App + Prisma Client         │
-│  https://your-app.vercel.app        │
+│  https://audiq.vercel.app           │
 └──────────┬──────────────────────────┘
            │ fetchWorker() → WORKER_URL
      ┌─────▼──────────────┐
-     │  RENDER (Worker)    │  ← GRATIS
+     │  KOYEB (Worker)     │  ← GRATIS
      │  yt-dlp + Bun       │
-     │  Port 10000          │
      │  Docker container    │
+     │  Port (auto)         │
      └──────┬──────────────┘
             │
      ┌──────▼──────────────┐
@@ -37,7 +37,22 @@ git push -u origin main
 
 ---
 
-### STEP 2: Setup Neon Database (PostgreSQL)
+### STEP 2: Deploy ke Vercel
+
+1. Buka **https://vercel.com**
+2. Sign in dengan GitHub
+3. Klik **"Add New"** → **"Project"**
+4. Import repository `audiq`
+5. **Configure Project**:
+   - Framework Preset: **Next.js**
+   - Root Directory: `.` (root)
+6. Klik **"Deploy"**
+7. Tunggu build selesai (~2-3 menit)
+8. Website live di `https://audiq.vercel.app`
+
+---
+
+### STEP 3: Setup Neon Database (PostgreSQL)
 
 1. Buka **https://console.neon.tech**
 2. Sign in dengan GitHub
@@ -51,55 +66,54 @@ git push -u origin main
    ```
    postgresql://neondb_owner:xxxx@ep-cool-name.ap-southeast-1.aws.neon.tech/neondb?sslmode=require
    ```
+7. Tambah `DATABASE_URL` ke Vercel:
+   - Buka **https://vercel.com/Ci-Pro/audiq/settings/environment-variables**
+   - Add: Key = `DATABASE_URL`, Value = connection string dari Neon
+   - Pilih **Production + Preview + Development**
+   - Klik **Save** → Redeploy
 
 ---
 
-### STEP 3: Deploy Worker ke Render
+### STEP 4: Deploy Worker ke Koyeb
 
-1. Buka **https://render.com**
+1. Buka **https://app.koyeb.com**
 2. Sign in dengan GitHub
-3. Klik **"New"** → **"Web Service"**
-4. Pilih repository `audiq`
+3. Klik **"Create Service"**
+4. Pilih **"GitHub"** → connect repo **Ci-Pro/audiq**
 5. Settings:
+   - **Branch**: `main`
    - **Root Directory**: `mini-services/download-worker`
-   - **Runtime**: Docker
-   - **Plan**: Free
+   - **Build type**: `Dockerfile`
+   - **Instance type**: **Nano** (gratis)
+   - **Regions**: pilih yang terdekat (Singapore)
 6. Environment Variables:
-   - `PORT` = `10000`
-   - `WORKER_SECRET` = generate random (klik "Generate")
-7. Klik **"Create Web Service"**
+   - `WORKER_SECRET` = generate random string (contoh: `audiq-secret-xyz123`)
+7. Klik **"Deploy"**
 8. Tunggu build selesai (~3-5 menit)
-9. Copy URL worker, misalnya:
+9. Copy **Service URL** dari overview, misalnya:
    ```
-   https://audiq-worker.onrender.com
+   https://audiq-worker-xxxx.koyeb.app
    ```
 
 ---
 
-### STEP 4: Deploy ke Vercel
+### STEP 5: Connect Worker ke Vercel
 
-1. Buka **https://vercel.com**
-2. Sign in dengan GitHub
-3. Klik **"Add New"** → **"Project"**
-4. Import repository `audiq`
-5. **Configure Project**:
-   - Framework Preset: **Next.js**
-   - Root Directory: `.` (root)
-6. **Environment Variables**:
+1. Buka **https://vercel.com/Ci-Pro/audiq/settings/environment-variables**
+2. Tambah 2 env var:
    | Key | Value |
    |-----|-------|
-   | `DATABASE_URL` | Connection string dari Neon (Step 2) |
-   | `WORKER_URL` | URL dari Render (Step 3) |
-   | `WORKER_SECRET` | Secret yang sama dengan di Render |
-7. Klik **"Deploy"**
-8. Tunggu build selesai (~2-3 menit)
-9. Website live di `https://audiq.vercel.app`
+   | `WORKER_URL` | URL Koyeb dari Step 4 (contoh: `https://audiq-worker-xxxx.koyeb.app`) |
+   | `WORKER_SECRET` | Secret yang sama dengan di Koyeb |
+3. Pilih **Production + Preview + Development**
+4. Klik **Save**
+5. Redeploy: Vercel Dashboard → Deployments → Redeploy
 
 ---
 
-### STEP 5: Setup Database Schema
+### STEP 6: Setup Database Schema
 
-Setelah Vercel deploy berhasil, jalankan migration dari lokal:
+Jalankan migration dari lokal:
 
 ```bash
 # Set DATABASE_URL ke Neon
@@ -109,23 +123,16 @@ export DATABASE_URL="postgresql://neondb_owner:xxxx@ep-xxx.aws.neon.tech/neondb?
 npx prisma db push
 ```
 
-Atau dari Vercel CLI:
-```bash
-npx vercel env pull .env.local
-npx prisma db push
-```
-
 ---
 
 ## ⚠️ Important Notes (Free Tier)
 
-### Render Free Tier
-- **Spin-down**: Worker akan mati setelah 15 menit tidak ada request
-- **Cold start**: Request pertama setelah spin-down butuh ~30 detik
-- **Timeout**: Request max 60 detik (video sangat panjang bisa gagal)
-- **RAM**: 512MB
-- **Storage**: Ephemeral (file hilang saat restart)
-- **750 jam/bulan**: Cukup untuk pemakaian normal
+### Koyeb Free Tier (Nano)
+- **1 vCPU**, **128MB RAM**, **2GB disk**
+- **Spin-down**: Service mati setelah 15 menit tidak ada request
+- **Cold start**: Request pertama setelah spin-down butuh ~20 detik
+- **Timeout**: Request max 5 menit
+- **1 Service** gratis
 
 ### Neon Free Tier
 - **0.5 GB** storage
@@ -141,9 +148,9 @@ npx prisma db push
 
 ## 🔄 Update Worker Secret
 
-Kalau Render auto-generate `WORKER_SECRET`, copy nilainya dari Render Dashboard → Environment, lalu tambahkan ke Vercel:
+Kalau Koyeb generate `WORKER_SECRET`, copy nilainya dari Koyeb Dashboard → Environment, lalu tambahkan ke Vercel:
 
-1. Buka Render Dashboard → audiq-worker → Environment
+1. Buka Koyeb Dashboard → audiq-worker → Environment Variables
 2. Copy value `WORKER_SECRET`
 3. Buka Vercel Dashboard → audiq → Settings → Environment Variables
 4. Tambah `WORKER_SECRET` dengan value yang sama
@@ -153,7 +160,7 @@ Kalau Render auto-generate `WORKER_SECRET`, copy nilainya dari Render Dashboard 
 
 ## 🧪 Verifikasi
 
-1. Buka `https://your-app.vercel.app`
+1. Buka `https://audiq.vercel.app`
 2. Paste YouTube URL
 3. Klik Analyze → harus muncul preview
 4. Pilih format → Convert & Download
@@ -161,5 +168,5 @@ Kalau Render auto-generate `WORKER_SECRET`, copy nilainya dari Render Dashboard 
 
 Kalau error "Worker not available":
 - Cek WORKER_URL di Vercel env sudah benar
-- Buka Render dashboard, pastikan worker status "Live"
-- Kalau worker sedang spin-down, refresh halaman (butuh ~30s cold start)
+- Buka Koyeb dashboard, pastikan worker status "Running"
+- Kalau worker sedang spin-down, refresh halaman (butuh ~20s cold start)

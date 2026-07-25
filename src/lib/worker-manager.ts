@@ -1,8 +1,8 @@
 /**
- * Worker Manager — connects to the remote Render worker service.
+ * Worker Manager — connects to the remote worker service (Koyeb/Render).
  *
  * LOCAL DEV: Uses WORKER_URL=http://localhost:3003, no auth needed.
- * PRODUCTION (Vercel): Uses WORKER_URL=https://audiq-worker.onrender.com,
+ * PRODUCTION (Vercel): Uses WORKER_URL env var (e.g. https://audiq-worker.koyeb.app),
  *                     sends WORKER_SECRET in x-worker-secret header.
  */
 
